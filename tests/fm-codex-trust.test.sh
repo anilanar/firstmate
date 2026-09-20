@@ -108,8 +108,10 @@ args = [
 ]
 [[shell_environment_policy.rules]]
 name = "example"
+projects.enabled = false
 [features]
-hooks = false`.replaceAll('\n', '\r\n'));
+hooks = false
+projects = true`.replaceAll('\n', '\r\n'));
 NODE
 cp "$CONFIG/config.toml" "$CASE_DIR/before"
 run_trust --project-add "$PROJ" >/dev/null
@@ -118,7 +120,7 @@ assert_appended_to "$CASE_DIR/before" $'\r\n'
 cp "$CONFIG/config.toml" "$CASE_DIR/once"
 run_trust --project-add "$PROJ" >/dev/null
 cmp -s "$CASE_DIR/once" "$CONFIG/config.toml" || fail 'trusted project was rewritten'
-pass 'multiline and unrelated constructs are skipped intact; repeated registration is a no-op'
+pass 'multiline, nested-projects, and unrelated constructs are skipped intact; repeated registration is a no-op'
 
 make_case short_circuit
 node - "$CONFIG/config.toml" "$PROJ" <<'NODE'

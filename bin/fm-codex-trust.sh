@@ -27,8 +27,10 @@
 # stops the moment it knows, so a construct it cannot read after that answer
 # is never reached. Ordinary TOML it only has to skip over is skipped without
 # interpretation: multiline arrays and strings, array tables, comments, and
-# unrelated tables of any shape. Only a genuinely ambiguous projects entry
-# refuses: a projects-rooted construct outside Codex's canonical
+# unrelated tables of any shape, including their own keys named projects,
+# which are relative to that table and cannot name a project. Only a genuinely
+# ambiguous projects entry refuses: a projects-rooted table header, or a
+# projects-rooted root-table assignment, outside Codex's canonical
 # [projects."<path>"] table could name this project in a spelling the scan
 # cannot compare, and appending beside it could duplicate its table. Malformed
 # TOML - an unterminated string, value, or table header - refuses too, since
@@ -208,6 +210,7 @@ function existingEntry(bytes) {
   }
 
   let inProject = false;
+  let rootTable = true;
   let decision;
   for (;;) {
     while (at < raw.length) {
@@ -222,6 +225,7 @@ function existingEntry(bytes) {
     const from = at;
     if (raw[at] === "[") {
       if (inProject) return decision;
+      rootTable = false;
       const arrayTable = raw[at + 1] === "[";
       at += arrayTable ? 2 : 1;
       const parts = readKey(where);
@@ -249,7 +253,7 @@ function existingEntry(bytes) {
     }
     const parts = readKey(where);
     blanks();
-    if (!parts || raw[at] !== "=" || rootKey(parts[0], where) === "projects") {
+    if (!parts || raw[at] !== "=" || (rootTable && rootKey(parts[0], where) === "projects")) {
       refuseAt(where, "noncanonical or ambiguous assignment (including dotted or inline projects)");
     }
     at += 1;
