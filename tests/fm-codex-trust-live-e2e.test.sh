@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Token-free installed-Codex guard for project-root directory trust. Uses a
 # private PTY, throwaway HOME/CODEX_HOME, fake API credentials, and no prompt.
-# Proves an unregistered linked worktree shows the directory dialog, accepting
-# it writes the primary root, and the intake helper removes the same dialog.
+# Proves an unregistered linked worktree shows the directory dialog and the
+# intake helper removes that dialog. Native dialog acceptance belongs to Codex;
+# this guard sends no input except terminal capability-query responses.
 # No fleet endpoint, real config, credentials, or hook trust store is touched.
 set -eu
 # shellcheck source=tests/lib.sh
@@ -36,7 +37,6 @@ base = 'check_for_update_on_startup = false\ncli_auth_credentials_store = "file"
 store.write_text(base)
 (config / 'auth.json').write_text(json.dumps({'OPENAI_API_KEY': 'sk-firstmate-test-not-real'}))
 env = dict(os.environ, HOME=str(user), CODEX_HOME=str(config), TERM='xterm-256color')
-header = '[projects.' + json.dumps(str(project), ensure_ascii=False) + ']'
 trust_dialog = re.compile(r'Do\s+you\s+trust\s+the\s+contents')
 ready = re.compile(r'model:\s+(?!loading\b)[\w.-]+\s+/model')
 
@@ -47,22 +47,17 @@ def screen(data):
     return re.sub(r'\x1b\[[0-9;? >]*[A-Za-z]', ' ', text)
 
 
-def launch(expect_dialog, accept=False):
+def launch(expect_dialog):
     master, slave = pty.openpty()
     fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack('HHHH', 45, 160, 0, 0))
-
-    def own_terminal():
-        os.setsid()
-        fcntl.ioctl(slave, termios.TIOCSCTTY, 0)
 
     process = subprocess.Popen(
         ['codex', '--no-alt-screen', '--disable', 'hooks',
          '--dangerously-bypass-approvals-and-sandbox', '-C', str(worktree)],
-        stdin=slave, stdout=slave, stderr=slave, env=env, preexec_fn=own_terminal,
+        stdin=slave, stdout=slave, stderr=slave, env=env, start_new_session=True,
     )
     os.close(slave)
     output = b''
-    answered = False
     try:
         deadline = time.monotonic() + 30
         while time.monotonic() < deadline and process.poll() is None:
@@ -77,15 +72,7 @@ def launch(expect_dialog, accept=False):
             if trust_dialog.search(plain):
                 if not expect_dialog:
                     raise AssertionError('registered root still showed the directory dialog')
-                if not accept:
-                    return
-                if not answered:
-                    # This consent is only for this test's own empty fixture.
-                    os.write(master, b'\r')
-                    answered = True
-                if header in store.read_text() and 'trust_level = "trusted"' in store.read_text():
-                    assert json.dumps(str(worktree)) not in store.read_text()
-                    return
+                return
             if ready.search(plain) and not expect_dialog:
                 return
         raise AssertionError('expected dialog or initialized composer never appeared: ' + screen(output)[-1500:])
@@ -101,11 +88,8 @@ def launch(expect_dialog, accept=False):
 
 
 try:
-    launch(True, accept=True)
-    print('ok - codex ' + version + ': accepting a fresh worktree records trust at the primary root')
-    launch(False)
-    print('ok - codex ' + version + ': persisted root trust covers a later worktree session')
-    store.write_text(base)
+    launch(True)
+    print('ok - codex ' + version + ': an unregistered project root shows the directory dialog')
     subprocess.run([helper, '--project-add', str(project)], env=env, check=True, stdout=subprocess.DEVNULL)
     launch(False)
     print('ok - codex ' + version + ': intake registration reaches the composer without a directory dialog')

@@ -81,6 +81,7 @@ const { TextDecoder } = require("node:util");
 const [storeArg, project] = process.argv.slice(2);
 const backup = `${storeArg}.bak`;
 const refuse = (reason) => { throw new Error(reason); };
+const quotePath = (value) => JSON.stringify(value).replace(/\x7f/g, "\\u007f");
 
 function read(file) {
   let info;
@@ -147,7 +148,7 @@ function existingEntry(bytes) {
       let name;
       try { name = JSON.parse(canonical[1]); }
       catch { refuse(`line ${number}: noncanonical project path quoting`); }
-      if (JSON.stringify(name) !== canonical[1]) refuse(`line ${number}: noncanonical project path quoting`);
+      if (quotePath(name) !== canonical[1]) refuse(`line ${number}: noncanonical project path quoting`);
       if (entries.has(name)) refuse(`line ${number}: duplicate project table`);
       entries.set(name, "unspecified");
       currentProject = name;
@@ -207,8 +208,8 @@ function attempt() {
   if (original) fs.accessSync(store, fs.constants.W_OK);
   const previousBackup = read(backup); // Refuse a foreign file or symlink.
   const newline = before.includes(Buffer.from("\r\n")) ? "\r\n" : "\n";
-  const separator = before.length === 0 ? "" : (before.at(-1) === 10 ? newline : newline + newline);
-  const quoted = JSON.stringify(project).replace(/\x7f/g, "\\u007f");
+  const separator = before.length === 0 ? "" : (before[before.length - 1] === 10 ? newline : newline + newline);
+  const quoted = quotePath(project);
   const addition = `${separator}[projects.${quoted}]${newline}trust_level = "trusted"${newline}`;
   const candidate = Buffer.concat([before, Buffer.from(addition)]);
   const mode = original ? original.info.mode & 0o777 : 0o600;
