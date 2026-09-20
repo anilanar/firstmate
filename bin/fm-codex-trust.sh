@@ -300,7 +300,7 @@ function attempt() {
     if (resolveStore() !== store || !same(read(store), original)) return false;
     fs.renameSync(temp, store);
     temp = null;
-    if (resolveStore() !== store || !read(store)?.bytes.equals(candidate)) return false;
+    if (!read(store)?.bytes.equals(candidate)) return false;
     console.log(`trusted: ${project}`);
     return true;
   } finally {

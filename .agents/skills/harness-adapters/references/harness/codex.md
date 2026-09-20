@@ -19,6 +19,8 @@ Verified on 2026-06-11 with codex-cli 0.139.0 unless a fact gives a newer versio
 A directory trust dialog appears on the first run for an unregistered repository root: "Do you trust the contents of this directory?"
 Codex resolves a linked worktree to the primary repository root and persists the accepted decision under that root's path in its user config, so later worktrees of the same project skip it.
 No worktree-path entry is expected, and the acceptance is not session-scoped.
+Verified on 2026-09-20 with codex-cli 0.155.1: an unregistered root showed the dialog, and a linked worktree of a root registered in that config reached its composer without one.
+That guard observes those two states and deliberately never drives the native acceptance.
 `../project-management/SKILL.md` owns consent for registering directory trust through `../../../bin/fm-codex-trust.sh`, during main-home project intake and for the project clones `../secondmate-provisioning/SKILL.md` seeds into a local secondmate home; a spawn, fleet sync, registry rebuild, or discovered clone never grants it.
 The directory dialog can be accepted with Enter when separately authorized; verify the instructions begin processing.
 

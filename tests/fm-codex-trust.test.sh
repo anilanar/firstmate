@@ -73,7 +73,8 @@ if run_trust "$PROJ" >/dev/null; then
   fail 'missing project-intake authorization succeeded'
 fi
 [ ! -e "$CONFIG/config.toml" ] || fail 'unauthorized call created config.toml'
-run_trust --project-add "$PROJ" >/dev/null
+output=$(run_trust --project-add "$PROJ")
+assert_contains "$output" "trusted: $PROJ" 'a first registration reports the write it performed'
 assert_trusted
 pass 'only an explicitly authorized intake registers an absent project entry'
 
@@ -211,6 +212,21 @@ node - "$CASE_DIR/actual.toml" <<'NODE'
 require('node:assert/strict').equal(require('node:fs').statSync(process.argv[2]).mode & 0o777, 0o640);
 NODE
 pass 'owned config symlinks and existing permissions survive registration'
+
+make_case symlinked_home
+REAL_CONFIG=$CONFIG
+CONFIG="$CASE_DIR/linked-codex"
+ln -s "$REAL_CONFIG" "$CONFIG"
+output=$(run_trust --project-add "$PROJ")
+assert_contains "$output" "trusted: $PROJ" 'a first registration through a linked directory reports its own write'
+assert_trusted
+[ -L "$CONFIG" ] || fail 'config directory symlink was replaced'
+[ -f "$REAL_CONFIG/config.toml" ] || fail 'config landed outside the linked directory'
+cp "$REAL_CONFIG/config.toml" "$CASE_DIR/once"
+output=$(run_trust --project-add "$PROJ")
+assert_contains "$output" 'existing trusted entry' 'a later call reports the settled decision'
+cmp -s "$CASE_DIR/once" "$REAL_CONFIG/config.toml" || fail 'second call rewrote the config'
+pass 'a fresh config in a symlinked config directory reports its own write, then unchanged'
 
 make_case atomic_failure
 printf '# original\n' > "$CONFIG/config.toml"
