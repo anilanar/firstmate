@@ -161,7 +161,9 @@ For `no-mistakes` projects, seeding initializes only projects newly cloned into 
 
 After a local seed succeeds, register Codex directory trust for each project clone it created, using `bin/fm-codex-trust.sh --project-add <home>/projects/<project>` when Codex is installed.
 The captain's decision to provision this secondmate with that project list authorizes those invocations, exactly as an intake decision authorizes the main home's own clone; a spawn into one of those clones does not.
-A remote home's clones live on another machine whose Codex config this helper cannot write, so they keep the first-run dialog.
+Register the home itself the same way when the seed created a standalone clone, using `bin/fm-codex-trust.sh --secondmate-home <home> <id>`: a secondmate's pane starts in the home, so an unregistered standalone clone wedges that worker on the same dialog.
+A treehouse-leased home is a linked worktree of the firstmate checkout, which the helper refuses because Codex already answers it from that checkout's own entry.
+A remote home and its clones live on another machine whose Codex config this helper cannot write, so they keep the first-run dialog.
 `project-management` owns the rest of that policy: registration is best effort, never blocks the seed or a later spawn, never overrides an existing decision, and never authorizes answering the dialog.
 
 ## Record intake for an existing or inherited domain

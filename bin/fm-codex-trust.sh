@@ -1,24 +1,41 @@
 #!/usr/bin/env bash
-# Register Codex directory trust during an explicitly authorized project intake.
+# Register Codex directory trust for an explicitly authorized intake.
 # Usage: fm-codex-trust.sh --project-add <project-root>
+#        fm-codex-trust.sh --secondmate-home <home> <id>
+#   <project-root>  the primary checkout an authorized intake created
+#   <home>          the standalone secondmate home provisioning created
+#   <id>            the secondmate id that home must already be marked for
 #
-# Call only after the operator has authorized this project's intake: adding,
-# cloning, or creating it in the main home, as directed by
-# .agents/skills/project-management/SKILL.md, or provisioning a secondmate
-# whose project list names it, as directed by
-# .agents/skills/secondmate-provisioning/SKILL.md, for the clone that
-# provisioning creates in that home. The required flag asserts that intake
-# authorization; repository presence or a worker launch is NOT consent. Never
-# call from spawn, fleet sync, a discovered clone, or registry recovery.
+# Call only after the operator has authorized this intake: adding, cloning, or
+# creating a project in the main home, as directed by
+# .agents/skills/project-management/SKILL.md, or provisioning a secondmate, as
+# directed by .agents/skills/secondmate-provisioning/SKILL.md, for both the
+# project clones and the home clone that provisioning creates. The required
+# flag asserts that intake authorization; repository presence or a worker
+# launch is NOT consent. Never call from spawn, fleet sync, a discovered
+# clone, or registry recovery.
 # Codex persists trust at the primary repository root, covering its linked
 # worktrees; accepting its directory dialog is not session-scoped.
 #
 # Follows fm-claude-trust.sh's structural scope validation and atomic store
 # replacement, but never overwrites an existing trust decision. Only an exact
 # primary checkout root is accepted, never a linked worktree, subdirectory,
-# filesystem root, or home directory. An existing trusted entry is a no-op;
-# any existing entry is left unchanged, with an explicit untrusted decision
-# reported as such.
+# filesystem root, or home directory. That primary-only test is also what
+# keeps a leased treehouse home out of scope: it is a linked worktree of the
+# firstmate checkout, so Codex answers it from that checkout's own entry and
+# only a standalone clone needs one of its own. An existing trusted entry is a
+# no-op; any existing entry is left unchanged, with an explicit untrusted
+# decision reported as such.
+#
+# SECONDMATE-HOME MODE registers a whole firstmate instance rather than a
+# project, so the seed rather than a caller's word is the evidence, mirroring
+# fm-claude-trust.sh's own arm: the home must carry a .fm-secondmate-home
+# marker that is a regular file this user owns, never a symlink, naming
+# exactly the <id> passed; it must hold the instance files AGENTS.md and bin/;
+# and each of its data, state, config and projects paths must resolve inside
+# the home. An absent operational directory is accepted, as the spawn's own
+# check accepts one. A plain directory, a project checkout, an ordinary
+# firstmate checkout, and a home marked for another secondmate are refused.
 #
 # Uses the existing Node dependency. Writes only the launching user's
 # ${CODEX_HOME:-$HOME/.codex}/config.toml. CODEX_HOME must be absolute when set.
@@ -50,29 +67,77 @@ unset CDPATH \
   GIT_DISCOVERY_ACROSS_FILESYSTEM GIT_CONFIG GIT_CONFIG_GLOBAL \
   GIT_CONFIG_SYSTEM GIT_CONFIG_NOSYSTEM GIT_CONFIG_COUNT
 
-usage() { echo 'usage: fm-codex-trust.sh --project-add <project-root>' >&2; }
+usage() {
+  echo 'usage: fm-codex-trust.sh --project-add <project-root>' >&2
+  echo '       fm-codex-trust.sh --secondmate-home <home> <id>' >&2
+  exit 2
+}
 if [ "${1:-}" = --help ] || [ "${1:-}" = -h ]; then
   sed -n '2,/^set -u/{ /^set -u/d; s/^# \{0,1\}//; p; }' "$0"
   exit 0
 fi
-[ "$#" -eq 2 ] && [ "$1" = --project-add ] || { usage; exit 2; }
+case "${1:-}" in
+  --project-add)
+    [ "$#" -eq 2 ] || usage
+    MODE=project
+    TARGET_ARG=$2
+    SUB_ID=
+    SCOPE_NOUN=project
+    ;;
+  --secondmate-home)
+    [ "$#" -eq 3 ] || usage
+    MODE=secondmate-home
+    TARGET_ARG=$2
+    SUB_ID=$3
+    SCOPE_NOUN='secondmate home'
+    ;;
+  *)
+    usage
+    ;;
+esac
 refuse() { echo "error: refusing to register Codex trust: $1" >&2; exit 1; }
 real_dir() { (cd -P -- "$1" 2>/dev/null && pwd -P); }
 
-PROJECT=$(real_dir "$2") || refuse "'$2' is not an accessible directory"
-[ "$PROJECT" != / ] || refuse 'the filesystem root is not a project'
+TARGET=$(real_dir "$TARGET_ARG") || refuse "'$TARGET_ARG' is not an accessible directory"
+[ "$TARGET" != / ] || refuse "the filesystem root is not a $SCOPE_NOUN"
 if [ -n "${HOME:-}" ]; then
   USER_HOME_REAL=$(real_dir "$HOME") || true
-  [ "$PROJECT" != "${USER_HOME_REAL:-}" ] || refuse 'the home directory is not a project'
+  [ "$TARGET" != "${USER_HOME_REAL:-}" ] || refuse "the home directory is not a $SCOPE_NOUN"
 fi
-TOP=$(git -C "$PROJECT" rev-parse --show-toplevel 2>/dev/null) || refuse "'$PROJECT' is not a Git checkout"
+TOP=$(git -C "$TARGET" rev-parse --show-toplevel 2>/dev/null) || refuse "'$TARGET' is not a Git checkout"
 TOP=$(real_dir "$TOP") || refuse 'could not resolve the checkout root'
-[ "$TOP" = "$PROJECT" ] || refuse "'$PROJECT' is a subdirectory, not the project root"
-GIT_PATH=$(git -C "$PROJECT" rev-parse --absolute-git-dir 2>/dev/null) || refuse 'could not resolve the Git directory'
+[ "$TOP" = "$TARGET" ] || refuse "'$TARGET' is a subdirectory, not the $SCOPE_NOUN root"
+GIT_PATH=$(git -C "$TARGET" rev-parse --absolute-git-dir 2>/dev/null) || refuse 'could not resolve the Git directory'
 GIT_PATH=$(real_dir "$GIT_PATH") || refuse 'could not resolve the Git directory'
-COMMON=$(git -C "$PROJECT" rev-parse --git-common-dir 2>/dev/null) || refuse 'could not resolve the common directory'
-COMMON=$(cd -P -- "$PROJECT" && real_dir "$COMMON") || refuse 'could not resolve the common directory'
-[ "$GIT_PATH" = "$COMMON" ] || refuse "'$PROJECT' is a linked worktree, not the primary project root"
+COMMON=$(git -C "$TARGET" rev-parse --git-common-dir 2>/dev/null) || refuse 'could not resolve the common directory'
+COMMON=$(cd -P -- "$TARGET" && real_dir "$COMMON") || refuse 'could not resolve the common directory'
+[ "$GIT_PATH" = "$COMMON" ] || refuse "'$TARGET' is a linked worktree, not a primary checkout root"
+
+if [ "$MODE" = secondmate-home ]; then
+  [ -n "$SUB_ID" ] || refuse "no secondmate id was supplied, so '$TARGET' cannot be matched against its seed marker"
+  MARKER="$TARGET/.fm-secondmate-home"
+  [ ! -L "$MARKER" ] || refuse "'$MARKER' is a symlink; a seeded secondmate home carries the marker as a regular file"
+  [ -f "$MARKER" ] || refuse "'$TARGET' carries no .fm-secondmate-home marker, so it is not a seeded secondmate home"
+  [ -O "$MARKER" ] || refuse "'$MARKER' is not owned by this user"
+  MARKER_ID=$(cat "$MARKER" 2>/dev/null) || true
+  [ "$MARKER_ID" = "$SUB_ID" ] || refuse "'$TARGET' is marked for secondmate '${MARKER_ID:-unknown}', not '$SUB_ID'"
+  [ -f "$TARGET/AGENTS.md" ] || refuse "'$TARGET' has no AGENTS.md, so it is not a firstmate home"
+  [ -d "$TARGET/bin" ] || refuse "'$TARGET' has no bin/, so it is not a firstmate home"
+  for SUB_DIR_NAME in data state config projects; do
+    SUB_DIR="$TARGET/$SUB_DIR_NAME"
+    if [ -L "$SUB_DIR" ] && [ ! -e "$SUB_DIR" ]; then
+      refuse "'$SUB_DIR' is a broken symlink, so this home's $SUB_DIR_NAME directory cannot be shown to stay inside it"
+    fi
+    [ -e "$SUB_DIR" ] || continue
+    [ -d "$SUB_DIR" ] || refuse "'$SUB_DIR' is not a directory, so '$TARGET' is not a seeded secondmate home"
+    SUB_DIR_REAL=$(real_dir "$SUB_DIR") || true
+    [ -n "$SUB_DIR_REAL" ] || refuse "'$SUB_DIR' cannot be resolved"
+    case "$SUB_DIR_REAL" in
+      "$TARGET"/*) ;;
+      *) refuse "'$SUB_DIR' resolves to '$SUB_DIR_REAL', outside the home, so '$TARGET' is not a safe secondmate home" ;;
+    esac
+  done
+fi
 
 if [ -n "${CODEX_HOME:-}" ]; then
   case "$CODEX_HOME" in /*) ;; *) refuse 'CODEX_HOME must be absolute' ;; esac
@@ -83,7 +148,7 @@ else
 fi
 command -v node >/dev/null 2>&1 || refuse 'node is required'
 
-node - "$CONFIG_DIR/config.toml" "$PROJECT" <<'NODE'
+node - "$CONFIG_DIR/config.toml" "$TARGET" <<'NODE'
 const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");

@@ -21,7 +21,7 @@ Codex resolves a linked worktree to the primary repository root and persists the
 No worktree-path entry is expected, and the acceptance is not session-scoped.
 Verified on 2026-09-20 with codex-cli 0.155.1: an unregistered root showed the dialog, and a linked worktree of a root registered in that config reached its composer without one.
 That guard observes those two states and deliberately never drives the native acceptance.
-`../project-management/SKILL.md` owns consent for registering directory trust through `../../../bin/fm-codex-trust.sh`, during main-home project intake and for the project clones `../secondmate-provisioning/SKILL.md` seeds into a local secondmate home; a spawn, fleet sync, registry rebuild, or discovered clone never grants it.
+`../project-management/SKILL.md` owns consent for registering directory trust through `../../../bin/fm-codex-trust.sh`, during main-home project intake and, per `../secondmate-provisioning/SKILL.md`, for the project clones and the standalone home clone a local secondmate seed creates; a spawn, fleet sync, registry rebuild, or discovered clone never grants it.
 The directory dialog can be accepted with Enter when separately authorized; verify the instructions begin processing.
 
 ## Hook trust

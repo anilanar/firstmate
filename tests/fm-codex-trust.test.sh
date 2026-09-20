@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Behavior tests for Codex project intake, conservative refusal of ambiguous
-# project entries, exact config preservation, and structural project-root
-# validation.
+# Behavior tests for Codex project and secondmate-home intake, conservative
+# refusal of ambiguous project entries, exact config preservation, and
+# structural root validation.
 # Uses only the existing Node dependency, including on stock macOS Python 3.9.
 set -eu
 
@@ -25,6 +25,14 @@ run_trust() {
   HOME="$USER_DIR" CODEX_HOME="$CONFIG" "$TRUST" "$@" 2>&1
 }
 
+seed_home() {
+  local home=$1 id=$2
+  fm_git_init_commit "$home"
+  mkdir -p "$home/bin" "$home/data" "$home/state" "$home/config" "$home/projects"
+  printf '# Firstmate\n' > "$home/AGENTS.md"
+  printf '%s\n' "$id" > "$home/.fm-secondmate-home"
+}
+
 write_entry() {
   node - "$CONFIG/config.toml" "$PROJ" "$1" <<'NODE'
 const fs = require('node:fs');
@@ -34,7 +42,7 @@ NODE
 }
 
 assert_trusted() {
-  node - "$CONFIG/config.toml" "$PROJ" "$WT" <<'NODE'
+  node - "$CONFIG/config.toml" "${1:-$PROJ}" "$WT" <<'NODE'
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const [store, project, worktree] = process.argv.slice(2);
@@ -227,6 +235,48 @@ output=$(run_trust --project-add "$PROJ")
 assert_contains "$output" 'existing trusted entry' 'a later call reports the settled decision'
 cmp -s "$CASE_DIR/once" "$REAL_CONFIG/config.toml" || fail 'second call rewrote the config'
 pass 'a fresh config in a symlinked config directory reports its own write, then unchanged'
+
+make_case secondmate_home
+SEEDED_HOME="$CASE_DIR/fm-homes/nomistakes-n1"
+seed_home "$SEEDED_HOME" nomistakes-n1
+output=$(run_trust --secondmate-home "$SEEDED_HOME" nomistakes-n1)
+assert_contains "$output" "trusted: $SEEDED_HOME" 'a seeded standalone home registers its own root'
+assert_trusted "$SEEDED_HOME"
+output=$(run_trust --secondmate-home "$SEEDED_HOME" nomistakes-n1)
+assert_contains "$output" 'existing trusted entry' 'a later provisioning call is a no-op'
+if run_trust --secondmate-home "$SEEDED_HOME" >/dev/null; then
+  fail 'an unnamed secondmate accepted a home registration'
+fi
+pass 'a seeded standalone secondmate home registers once, then no-ops'
+
+for shape in no_marker wrong_id symlinked_marker no_agents no_bin escaping_dir leased plain_checkout; do
+  make_case "home-$shape"
+  printf '# untouched\n' > "$CONFIG/config.toml"
+  SEEDED_HOME="$CASE_DIR/home"
+  if [ "$shape" = leased ]; then
+    fm_git_worktree "$CASE_DIR/home-src" "$SEEDED_HOME" "home-$shape"
+    mkdir -p "$SEEDED_HOME/bin" "$SEEDED_HOME/data" "$SEEDED_HOME/state" "$SEEDED_HOME/config" "$SEEDED_HOME/projects"
+    printf '# Firstmate\n' > "$SEEDED_HOME/AGENTS.md"
+    printf 'nomistakes-n1\n' > "$SEEDED_HOME/.fm-secondmate-home"
+  else
+    seed_home "$SEEDED_HOME" nomistakes-n1
+  fi
+  case "$shape" in
+    no_marker) rm "$SEEDED_HOME/.fm-secondmate-home" ;;
+    wrong_id) printf 'other-n1\n' > "$SEEDED_HOME/.fm-secondmate-home" ;;
+    symlinked_marker)
+      rm "$SEEDED_HOME/.fm-secondmate-home"
+      printf 'nomistakes-n1\n' > "$CASE_DIR/planted-marker"
+      ln -s "$CASE_DIR/planted-marker" "$SEEDED_HOME/.fm-secondmate-home"
+      ;;
+    no_agents) rm "$SEEDED_HOME/AGENTS.md" ;;
+    no_bin) rmdir "$SEEDED_HOME/bin" ;;
+    escaping_dir) rmdir "$SEEDED_HOME/projects"; ln -s "$CASE_DIR" "$SEEDED_HOME/projects" ;;
+    plain_checkout) rm "$SEEDED_HOME/.fm-secondmate-home" "$SEEDED_HOME/AGENTS.md" ;;
+  esac
+  assert_refused_unchanged 'refusing to register Codex trust' --secondmate-home "$SEEDED_HOME" nomistakes-n1
+done
+pass 'only a home the seed marked for this secondmate qualifies, and never a leased worktree'
 
 make_case atomic_failure
 printf '# original\n' > "$CONFIG/config.toml"
