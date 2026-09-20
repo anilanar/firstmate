@@ -26,15 +26,26 @@ run_trust() {
 }
 
 seed_home() {
-  local home=$1 id=$2
-  fm_git_init_commit "$home"
+  local home=$1 id=$2 source=${3:-}
+  if [ -n "$source" ]; then
+    git clone --quiet "$source" "$home"
+  else
+    fm_git_init_commit "$home"
+  fi
   mkdir -p "$home/bin" "$home/data" "$home/state" "$home/config" "$home/projects"
   printf '# Firstmate\n' > "$home/AGENTS.md"
   printf '%s\n' "$id" > "$home/.fm-secondmate-home"
 }
 
+# seed_firstmate_source <dir>: the checkout bin/fm-home-seed.sh clones a
+# standalone home from, echoing the resolved path its trust entry is keyed by.
+seed_firstmate_source() {
+  fm_git_init_commit "$1" >/dev/null
+  (cd -P -- "$1" && pwd -P)
+}
+
 write_entry() {
-  node - "$CONFIG/config.toml" "$PROJ" "$1" <<'NODE'
+  node - "$CONFIG/config.toml" "${2:-$PROJ}" "$1" <<'NODE'
 const fs = require('node:fs');
 const [store, project, level] = process.argv.slice(2);
 fs.writeFileSync(store, `[projects.${JSON.stringify(project)}]\ntrust_level = ${JSON.stringify(level)}\n`);
@@ -237,19 +248,41 @@ cmp -s "$CASE_DIR/once" "$REAL_CONFIG/config.toml" || fail 'second call rewrote 
 pass 'a fresh config in a symlinked config directory reports its own write, then unchanged'
 
 make_case secondmate_home
+SOURCE_ROOT=$(seed_firstmate_source "$CASE_DIR/firstmate")
 SEEDED_HOME="$CASE_DIR/fm-homes/nomistakes-n1"
-seed_home "$SEEDED_HOME" nomistakes-n1
+seed_home "$SEEDED_HOME" nomistakes-n1 "$SOURCE_ROOT"
+write_entry trusted "$SOURCE_ROOT"
 output=$(run_trust --secondmate-home "$SEEDED_HOME" nomistakes-n1)
-assert_contains "$output" "trusted: $SEEDED_HOME" 'a seeded standalone home registers its own root'
+assert_contains "$output" "trusted: $SEEDED_HOME" 'a home whose source checkout is trusted inherits that trust'
 assert_trusted "$SEEDED_HOME"
 output=$(run_trust --secondmate-home "$SEEDED_HOME" nomistakes-n1)
 assert_contains "$output" 'existing trusted entry' 'a later provisioning call is a no-op'
 if run_trust --secondmate-home "$SEEDED_HOME" >/dev/null; then
   fail 'an unnamed secondmate accepted a home registration'
 fi
-pass 'a seeded standalone secondmate home registers once, then no-ops'
+pass 'a seeded standalone secondmate home inherits its source trust once, then no-ops'
 
-for shape in no_marker wrong_id symlinked_marker no_agents no_bin escaping_dir leased plain_checkout; do
+for source_state in untrusted undecided absent; do
+  make_case "home-source-$source_state"
+  SOURCE_ROOT=$(seed_firstmate_source "$CASE_DIR/firstmate")
+  SEEDED_HOME="$CASE_DIR/home"
+  seed_home "$SEEDED_HOME" nomistakes-n1 "$SOURCE_ROOT"
+  if [ "$source_state" = absent ]; then
+    printf '# no decision for the source checkout\n' > "$CONFIG/config.toml"
+  else
+    write_entry "$source_state" "$SOURCE_ROOT"
+  fi
+  assert_refused_unchanged 'refusing to register Codex trust' --secondmate-home "$SEEDED_HOME" nomistakes-n1
+  node - "$CONFIG/config.toml" "$SEEDED_HOME" <<'NODE'
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const [store, home] = process.argv.slice(2);
+assert.ok(!fs.readFileSync(store, 'utf8').includes(JSON.stringify(home)), 'a refused home must stay unregistered');
+NODE
+done
+pass 'a home inherits trust only from a source checkout this config already trusts'
+
+for shape in no_marker wrong_id symlinked_marker no_agents no_bin escaping_dir leased plain_checkout no_origin; do
   make_case "home-$shape"
   printf '# untouched\n' > "$CONFIG/config.toml"
   SEEDED_HOME="$CASE_DIR/home"
@@ -258,8 +291,10 @@ for shape in no_marker wrong_id symlinked_marker no_agents no_bin escaping_dir l
     mkdir -p "$SEEDED_HOME/bin" "$SEEDED_HOME/data" "$SEEDED_HOME/state" "$SEEDED_HOME/config" "$SEEDED_HOME/projects"
     printf '# Firstmate\n' > "$SEEDED_HOME/AGENTS.md"
     printf 'nomistakes-n1\n' > "$SEEDED_HOME/.fm-secondmate-home"
-  else
+  elif [ "$shape" = no_origin ]; then
     seed_home "$SEEDED_HOME" nomistakes-n1
+  else
+    seed_home "$SEEDED_HOME" nomistakes-n1 "$(seed_firstmate_source "$CASE_DIR/firstmate")"
   fi
   case "$shape" in
     no_marker) rm "$SEEDED_HOME/.fm-secondmate-home" ;;
@@ -276,7 +311,7 @@ for shape in no_marker wrong_id symlinked_marker no_agents no_bin escaping_dir l
   esac
   assert_refused_unchanged 'refusing to register Codex trust' --secondmate-home "$SEEDED_HOME" nomistakes-n1
 done
-pass 'only a home the seed marked for this secondmate qualifies, and never a leased worktree'
+pass 'only a seeded home with a resolvable source qualifies, and never a leased worktree'
 
 make_case atomic_failure
 printf '# original\n' > "$CONFIG/config.toml"

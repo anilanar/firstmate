@@ -37,6 +37,14 @@
 # check accepts one. A plain directory, a project checkout, an ordinary
 # firstmate checkout, and a home marked for another secondmate are refused.
 #
+# That seed proves what the home is, never that it may be trusted, so this
+# mode INHERITS rather than grants: the home's origin must resolve to a local
+# primary checkout - the firstmate checkout it was cloned from - and that
+# checkout must already carry trust_level = "trusted" in this config. A
+# source that is explicitly untrusted, carries no decision, or is not a local
+# checkout refuses before any write, so provisioning can never make a home
+# the first trusted copy of a firstmate checkout nobody trusted.
+#
 # Uses the existing Node dependency. Writes only the launching user's
 # ${CODEX_HOME:-$HOME/.codex}/config.toml. CODEX_HOME must be absolute when set.
 # Follows a config symlink to its owned regular-file target, retaining the link.
@@ -98,20 +106,31 @@ esac
 refuse() { echo "error: refusing to register Codex trust: $1" >&2; exit 1; }
 real_dir() { (cd -P -- "$1" 2>/dev/null && pwd -P); }
 
-TARGET=$(real_dir "$TARGET_ARG") || refuse "'$TARGET_ARG' is not an accessible directory"
-[ "$TARGET" != / ] || refuse "the filesystem root is not a $SCOPE_NOUN"
-if [ -n "${HOME:-}" ]; then
-  USER_HOME_REAL=$(real_dir "$HOME") || true
-  [ "$TARGET" != "${USER_HOME_REAL:-}" ] || refuse "the home directory is not a $SCOPE_NOUN"
-fi
-TOP=$(git -C "$TARGET" rev-parse --show-toplevel 2>/dev/null) || refuse "'$TARGET' is not a Git checkout"
-TOP=$(real_dir "$TOP") || refuse 'could not resolve the checkout root'
-[ "$TOP" = "$TARGET" ] || refuse "'$TARGET' is a subdirectory, not the $SCOPE_NOUN root"
-GIT_PATH=$(git -C "$TARGET" rev-parse --absolute-git-dir 2>/dev/null) || refuse 'could not resolve the Git directory'
-GIT_PATH=$(real_dir "$GIT_PATH") || refuse 'could not resolve the Git directory'
-COMMON=$(git -C "$TARGET" rev-parse --git-common-dir 2>/dev/null) || refuse 'could not resolve the common directory'
-COMMON=$(cd -P -- "$TARGET" && real_dir "$COMMON") || refuse 'could not resolve the common directory'
-[ "$GIT_PATH" = "$COMMON" ] || refuse "'$TARGET' is a linked worktree, not a primary checkout root"
+# Sets PRIMARY_ROOT to the resolved argument, or refuses. Both the registered
+# root and the source a home inherits from must pass the same test, so the
+# noun names which one a refusal is about.
+PRIMARY_ROOT=
+resolve_primary_root() {
+  local arg=$1 noun=$2 top git_dir common home_real
+  PRIMARY_ROOT=$(real_dir "$arg") || refuse "'$arg' is not an accessible directory"
+  [ "$PRIMARY_ROOT" != / ] || refuse "the filesystem root is not a $noun"
+  if [ -n "${HOME:-}" ]; then
+    home_real=$(real_dir "$HOME") || true
+    [ "$PRIMARY_ROOT" != "${home_real:-}" ] || refuse "the home directory is not a $noun"
+  fi
+  top=$(git -C "$PRIMARY_ROOT" rev-parse --show-toplevel 2>/dev/null) || refuse "'$PRIMARY_ROOT' is not a Git checkout"
+  top=$(real_dir "$top") || refuse 'could not resolve the checkout root'
+  [ "$top" = "$PRIMARY_ROOT" ] || refuse "'$PRIMARY_ROOT' is a subdirectory, not the $noun root"
+  git_dir=$(git -C "$PRIMARY_ROOT" rev-parse --absolute-git-dir 2>/dev/null) || refuse 'could not resolve the Git directory'
+  git_dir=$(real_dir "$git_dir") || refuse 'could not resolve the Git directory'
+  common=$(git -C "$PRIMARY_ROOT" rev-parse --git-common-dir 2>/dev/null) || refuse 'could not resolve the common directory'
+  common=$(cd -P -- "$PRIMARY_ROOT" && real_dir "$common") || refuse 'could not resolve the common directory'
+  [ "$git_dir" = "$common" ] || refuse "'$PRIMARY_ROOT' is a linked worktree, not a primary checkout root"
+}
+
+resolve_primary_root "$TARGET_ARG" "$SCOPE_NOUN"
+TARGET=$PRIMARY_ROOT
+SOURCE=
 
 if [ "$MODE" = secondmate-home ]; then
   [ -n "$SUB_ID" ] || refuse "no secondmate id was supplied, so '$TARGET' cannot be matched against its seed marker"
@@ -137,6 +156,15 @@ if [ "$MODE" = secondmate-home ]; then
       *) refuse "'$SUB_DIR' resolves to '$SUB_DIR_REAL', outside the home, so '$TARGET' is not a safe secondmate home" ;;
     esac
   done
+  ORIGIN=$(git -C "$TARGET" remote get-url origin 2>/dev/null) || ORIGIN=
+  [ -n "$ORIGIN" ] || refuse "'$TARGET' has no origin remote, so the checkout it inherits trust from cannot be resolved"
+  case "$ORIGIN" in
+    file://*) SOURCE_ARG=${ORIGIN#file://} ;;
+    /*) SOURCE_ARG=$ORIGIN ;;
+    *) refuse "'$TARGET' was cloned from '$ORIGIN', which is not a local checkout whose trust this helper can read" ;;
+  esac
+  resolve_primary_root "$SOURCE_ARG" 'source checkout'
+  SOURCE=$PRIMARY_ROOT
 fi
 
 if [ -n "${CODEX_HOME:-}" ]; then
@@ -148,12 +176,13 @@ else
 fi
 command -v node >/dev/null 2>&1 || refuse 'node is required'
 
-node - "$CONFIG_DIR/config.toml" "$TARGET" <<'NODE'
+node - "$CONFIG_DIR/config.toml" "$TARGET" "$SOURCE" <<'NODE'
 const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
 const { TextDecoder } = require("node:util");
-const [storeArg, project] = process.argv.slice(2);
+const [storeArg, project, sourceArg] = process.argv.slice(2);
+const source = sourceArg || null;
 const refuse = (reason) => { throw new Error(reason); };
 const quotePath = (value) => JSON.stringify(value).replace(/\x7f/g, "\\u007f");
 
@@ -184,7 +213,7 @@ function resolveStore() {
 
 // Walks statements, not values: a value is consumed only far enough to find
 // where it ends, so anything that is not a projects entry is skipped whole.
-function existingEntry(bytes) {
+function existingEntry(bytes, wanted) {
   const raw = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
   const canonicalTable = /^\[projects\.("(?:[^"\\\x00-\x1f]|\\.)*")\]$/;
   const trustStatement = /^trust_level\s*=\s*"(trusted|untrusted)"\s*(?:#.*)?$/;
@@ -313,7 +342,7 @@ function existingEntry(bytes) {
       try { name = JSON.parse(canonical[1]); }
       catch { refuseAt(where, "noncanonical project path quoting"); }
       if (quotePath(name) !== canonical[1]) refuseAt(where, "noncanonical project path quoting");
-      if (name === project) { inProject = true; decision = "unspecified"; }
+      if (name === wanted) { inProject = true; decision = "unspecified"; }
       continue;
     }
     const parts = readKey(where);
@@ -346,11 +375,19 @@ function attempt() {
   const store = resolveStore();
   const original = read(store);
   const before = original?.bytes ?? Buffer.alloc(0);
-  const existing = existingEntry(before);
+  const existing = existingEntry(before, project);
   if (existing !== undefined) {
     const detail = existing === "untrusted" ? "explicitly untrusted; decision preserved" : `existing ${existing} entry`;
     console.log(`unchanged: ${project} (${detail})`);
     return true;
+  }
+  if (source !== null) {
+    const inherited = existingEntry(before, source);
+    if (inherited !== "trusted") {
+      refuse(inherited === "untrusted"
+        ? `source checkout ${source} is explicitly untrusted, so this home inherits no trust`
+        : `source checkout ${source} carries no Codex trusted entry, so this home has no trust to inherit`);
+    }
   }
   if (original) fs.accessSync(store, fs.constants.W_OK);
   const newline = before.includes(Buffer.from("\r\n")) ? "\r\n" : "\n";
