@@ -527,7 +527,7 @@ ok - codex codex-cli 0.155.1: intake registration reaches the composer without a
 
 The guard spends no model tokens and runs by default wherever its tools are installed; `FM_CODEX_TRUST_LIVE=1` forces it on and `=0` disables it.
 It deliberately never answers the directory dialog: native acceptance is Codex's behavior, while this guard verifies the effect of Firstmate's registration.
-The portable companion covers conservative syntax refusal, unchanged existing decisions, exact config bytes, backups, publication failure, and project-root scope.
+The portable companion covers refusal of every noncanonical construct that could name the target project, skipping the ordinary multiline constructs that cannot, unchanged existing decisions, exact config bytes, publication failure, and project-root scope.
 The helper's header owns registration mechanics and limits; the project-management skill owns intake consent and the non-fatal failure policy.
 
 ## Codex hook trust

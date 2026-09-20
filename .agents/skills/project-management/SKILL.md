@@ -61,7 +61,8 @@ A `direct-PR` project needs an `origin` remote but skips no-mistakes initializat
 A `local-only` project may have no remote and skips no-mistakes initialization.
 
 After the confirmed intake and initialization succeed, register Codex directory trust using `bin/fm-codex-trust.sh --project-add <project-root>` when Codex is installed.
-The captain's decision to add this specific project authorizes that invocation; a discovered clone, registry rebuild, fleet sync, secondmate seed, or worker spawn does not.
+The captain's decision to add this specific project authorizes that invocation; a discovered clone, registry rebuild, fleet sync, or worker spawn does not.
+The same authorization reaches a secondmate's own clone of a project, because the captain provisioned that secondmate with that project list, and `secondmate-provisioning` owns that step for the homes it creates.
 The helper's header owns the store, prerequisites, scope checks, and refusal behavior.
 Registration is best effort and must never block intake or a later spawn: report a refusal or an unchanged untrusted entry, preserve the project and its existing decision, and leave the directory dialog available for an operator decision.
 One remaining dialog is preferable to risking an unreadable user config; the add request never overrides an explicit untrusted entry or authorizes automatically answering that dialog.

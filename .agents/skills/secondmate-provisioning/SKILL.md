@@ -159,6 +159,11 @@ Secondmate project lists may include `no-mistakes` and `direct-PR` projects only
 `local-only` projects stay with the main firstmate.
 For `no-mistakes` projects, seeding initializes only projects newly cloned into a secondmate home and refuses to mutate a preexisting clone that is not already initialized.
 
+After a local seed succeeds, register Codex directory trust for each project clone it created, using `bin/fm-codex-trust.sh --project-add <home>/projects/<project>` when Codex is installed.
+The captain's decision to provision this secondmate with that project list authorizes those invocations, exactly as an intake decision authorizes the main home's own clone; a spawn into one of those clones does not.
+A remote home's clones live on another machine whose Codex config this helper cannot write, so they keep the first-run dialog.
+`project-management` owns the rest of that policy: registration is best effort, never blocks the seed or a later spawn, never overrides an existing decision, and never authorizes answering the dialog.
+
 ## Record intake for an existing or inherited domain
 
 Classify the domain before seeding, because this step applies to only one of the two cases.

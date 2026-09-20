@@ -2,10 +2,14 @@
 # Register Codex directory trust during an explicitly authorized project intake.
 # Usage: fm-codex-trust.sh --project-add <project-root>
 #
-# Call only after the operator has approved adding/cloning/creating this project,
-# as directed by .agents/skills/project-management/SKILL.md. The required flag
-# asserts that intake authorization; repository presence or a worker launch is
-# NOT consent. Never call from spawn, fleet sync, seeding, or registry recovery.
+# Call only after the operator has authorized this project's intake: adding,
+# cloning, or creating it in the main home, as directed by
+# .agents/skills/project-management/SKILL.md, or provisioning a secondmate
+# whose project list names it, as directed by
+# .agents/skills/secondmate-provisioning/SKILL.md, for the clone that
+# provisioning creates in that home. The required flag asserts that intake
+# authorization; repository presence or a worker launch is NOT consent. Never
+# call from spawn, fleet sync, a discovered clone, or registry recovery.
 # Codex persists trust at the primary repository root, covering its linked
 # worktrees; accepting its directory dialog is not session-scoped.
 #
@@ -19,13 +23,17 @@
 # Uses the existing Node dependency. Writes only the launching user's
 # ${CODEX_HOME:-$HOME/.codex}/config.toml. CODEX_HOME must be absolute when set.
 # Follows a config symlink to its owned regular-file target, retaining the link.
-# Recognizes only canonical [projects."<path>"] tables and single-line
-# statements. Noncanonical projects constructs, quoted root keys, multiline
-# values, unbalanced delimiters, or otherwise ambiguous syntax refuse BEFORE
-# any write. This is a conservative presence check, not a general TOML parser.
-# Existing bytes are never reserialized. An owned regular config.toml.bak is
-# atomically replaced with the original bytes before replacing config.toml.
-# A missing config has no previous bytes to back up.
+# The scan answers one question - is this project path already decided - and
+# stops the moment it knows, so a construct it cannot read after that answer
+# is never reached. Ordinary TOML it only has to skip over is skipped without
+# interpretation: multiline arrays and strings, array tables, comments, and
+# unrelated tables of any shape. Only a genuinely ambiguous projects entry
+# refuses: a projects-rooted construct outside Codex's canonical
+# [projects."<path>"] table could name this project in a spelling the scan
+# cannot compare, and appending beside it could duplicate its table. Malformed
+# TOML - an unterminated string, value, or table header - refuses too, since
+# appending to it would land inside an unclosed construct. Every refusal
+# happens BEFORE any write, and existing bytes are never reserialized.
 # Rechecks the original bytes and file identity before atomic replacement and
 # verifies the result afterward. Concurrent changes cause a retry, then refusal;
 # as in the Claude helper, the final check/rename window is not a vendor lock.
@@ -79,7 +87,6 @@ const path = require("node:path");
 const crypto = require("node:crypto");
 const { TextDecoder } = require("node:util");
 const [storeArg, project] = process.argv.slice(2);
-const backup = `${storeArg}.bak`;
 const refuse = (reason) => { throw new Error(reason); };
 const quotePath = (value) => JSON.stringify(value).replace(/\x7f/g, "\\u007f");
 
@@ -108,80 +115,151 @@ function resolveStore() {
   }
 }
 
-// Mask single-line strings and comments before recognizing statement shapes.
-// Quoted root keys might spell "projects" with TOML escapes, so every such
-// construct refuses rather than trying to implement a general TOML reader.
-// Multiline values refuse too: a line-shaped header inside one is not a table.
-function maskLine(line, number) {
-  let masked = "";
-  for (let i = 0; i < line.length; i += 1) {
-    const char = line[i];
-    if (char === "#") break;
-    if (char !== '"' && char !== "'") { masked += char; continue; }
-    if (line.slice(i, i + 3) === char.repeat(3)) {
-      refuse(`line ${number}: multiline values are not supported; config left unchanged`);
-    }
-    const quote = char;
-    let closed = false;
-    for (i += 1; i < line.length; i += 1) {
-      if (quote === '"' && line[i] === "\\") { i += 1; continue; }
-      if (line[i] === quote) { closed = true; break; }
-    }
-    if (!closed) refuse(`line ${number}: unterminated string; config left unchanged`);
-    masked += "Q";
-  }
-  return masked.trim();
-}
+// Walks statements, not values: a value is consumed only far enough to find
+// where it ends, so anything that is not a projects entry is skipped whole.
 function existingEntry(bytes) {
   const raw = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
-  const entries = new Map();
-  let currentProject = null;
-  const key = "[A-Za-z0-9_-]+";
-  const table = new RegExp(`^\\[(${key})(?:\\s*\\.\\s*(?:${key}|Q))*\\]$`);
-  const assignment = new RegExp(`^(${key})(?:\\s*\\.\\s*(?:${key}|Q))*\\s*=\\s*(.+)$`);
-  for (const [index, line] of raw.split(/\r?\n/).entries()) {
-    const number = index + 1;
-    const masked = maskLine(line, number);
-    if (!masked) continue;
-    const canonical = line.trim().match(/^\[projects\.("(?:[^"\\\x00-\x1f]|\\.)*")\]\s*(?:#.*)?$/);
-    if (canonical) {
-      let name;
-      try { name = JSON.parse(canonical[1]); }
-      catch { refuse(`line ${number}: noncanonical project path quoting`); }
-      if (quotePath(name) !== canonical[1]) refuse(`line ${number}: noncanonical project path quoting`);
-      if (entries.has(name)) refuse(`line ${number}: duplicate project table`);
-      entries.set(name, "unspecified");
-      currentProject = name;
-      continue;
-    }
-    if (masked.startsWith("[")) {
-      const match = masked.match(table);
-      if (!match || match[1] === "projects" || line.trim().match(/^\[\s*["']/)) {
-        refuse(`line ${number}: noncanonical or ambiguous table header`);
+  const canonicalTable = /^\[projects\.("(?:[^"\\\x00-\x1f]|\\.)*")\]$/;
+  const trustStatement = /^trust_level\s*=\s*"(trusted|untrusted)"\s*(?:#.*)?$/;
+  let at = 0;
+  let line = 1;
+  const refuseAt = (where, why) => refuse(`line ${where}: ${why}`);
+  const blanks = () => { while (raw[at] === " " || raw[at] === "\t") at += 1; };
+  const comment = () => { while (at < raw.length && raw[at] !== "\n") at += 1; };
+
+  function skipString(where) {
+    const quote = raw[at];
+    if (raw.startsWith(quote.repeat(3), at)) {
+      for (at += 3; at < raw.length; at += 1) {
+        if (quote === '"' && raw[at] === "\\") {
+          if (raw[at + 1] === "\n") line += 1;
+          at += 1;
+          continue;
+        }
+        if (raw[at] === "\n") { line += 1; continue; }
+        if (raw.startsWith(quote.repeat(3), at)) {
+          let run = 0;
+          while (raw[at + run] === quote) run += 1;
+          at += Math.min(run, 5);
+          return;
+        }
       }
-      currentProject = null;
-      continue;
+      refuseAt(where, "unterminated multiline string; config left unchanged");
     }
-    const match = masked.match(assignment);
-    if (!match || match[1] === "projects" || line.trim().match(/^["']/)) {
-      refuse(`line ${number}: noncanonical or ambiguous assignment (including dotted or inline projects)`);
+    for (at += 1; at < raw.length; at += 1) {
+      if (raw[at] === "\n") break;
+      if (quote === '"' && raw[at] === "\\") {
+        if (raw[at + 1] === undefined || raw[at + 1] === "\n") break;
+        at += 1;
+        continue;
+      }
+      if (raw[at] === quote) { at += 1; return; }
     }
-    // A statement must finish on its own line, or appending a table could land
-    // inside an array or inline table. Unknown/multiline shapes are refused.
+    refuseAt(where, "unterminated string; config left unchanged");
+  }
+  // A statement must finish before the append point, or a new table could land
+  // inside an unclosed array, inline table, or multiline string.
+  function skipValue(where) {
     const stack = [];
-    for (const char of match[2]) {
-      if (char === "[" || char === "{") stack.push(char);
+    while (at < raw.length) {
+      const char = raw[at];
+      if (char === '"' || char === "'") { skipString(where); continue; }
+      if (char === "#") { comment(); continue; }
+      if (char === "[" || char === "{") { stack.push(char); at += 1; continue; }
       if (char === "]" || char === "}") {
-        if (stack.pop() !== (char === "]" ? "[" : "{")) refuse(`line ${number}: unbalanced value`);
+        if (stack.pop() !== (char === "]" ? "[" : "{")) refuseAt(where, "unbalanced value; config left unchanged");
+        at += 1;
+        continue;
       }
+      if (char === "\n") {
+        if (!stack.length) return;
+        line += 1;
+      }
+      at += 1;
     }
-    if (stack.length) refuse(`line ${number}: multiline or unbalanced value`);
-    if (currentProject !== null) {
-      const trust = line.trim().match(/^trust_level\s*=\s*"(trusted|untrusted)"\s*(?:#.*)?$/);
-      if (trust) entries.set(currentProject, trust[1]);
+    if (stack.length) refuseAt(where, "unterminated value; config left unchanged");
+  }
+  // Key parts stay raw; only the root is decoded, because only the root
+  // decides whether a construct can name a project at all.
+  function readKey(where) {
+    const parts = [];
+    for (;;) {
+      blanks();
+      const char = raw[at];
+      const from = at;
+      if (char === '"' || char === "'") {
+        if (raw.startsWith(char.repeat(3), at)) refuseAt(where, "multiline key; config left unchanged");
+        skipString(where);
+      } else {
+        while (at < raw.length && /[A-Za-z0-9_-]/.test(raw[at])) at += 1;
+        if (at === from) return null;
+      }
+      parts.push(raw.slice(from, at));
+      blanks();
+      if (raw[at] !== ".") return parts;
+      at += 1;
     }
   }
-  return entries.get(project);
+  function rootKey(part, where) {
+    if (part[0] === "'") return part.slice(1, -1);
+    if (part[0] !== '"') return part;
+    try { return JSON.parse(part); }
+    catch { return refuseAt(where, "unreadable quoted key; config left unchanged"); }
+  }
+
+  let inProject = false;
+  let decision;
+  for (;;) {
+    while (at < raw.length) {
+      const char = raw[at];
+      if (char === " " || char === "\t" || char === "\r") { at += 1; continue; }
+      if (char === "\n") { at += 1; line += 1; continue; }
+      if (char === "#") { comment(); continue; }
+      break;
+    }
+    if (at >= raw.length) return decision;
+    const where = line;
+    const from = at;
+    if (raw[at] === "[") {
+      if (inProject) return decision;
+      const arrayTable = raw[at + 1] === "[";
+      at += arrayTable ? 2 : 1;
+      const parts = readKey(where);
+      blanks();
+      const closer = arrayTable ? "]]" : "]";
+      if (!parts || !raw.startsWith(closer, at)) refuseAt(where, "noncanonical or ambiguous table header");
+      at += closer.length;
+      const header = raw.slice(from, at);
+      blanks();
+      if (raw[at] === "#") comment();
+      if (at < raw.length && raw[at] !== "\n" && raw[at] !== "\r") {
+        refuseAt(where, "noncanonical or ambiguous table header");
+      }
+      const canonical = arrayTable ? null : header.match(canonicalTable);
+      if (!canonical) {
+        if (rootKey(parts[0], where) === "projects") refuseAt(where, "noncanonical or ambiguous table header");
+        continue;
+      }
+      let name;
+      try { name = JSON.parse(canonical[1]); }
+      catch { refuseAt(where, "noncanonical project path quoting"); }
+      if (quotePath(name) !== canonical[1]) refuseAt(where, "noncanonical project path quoting");
+      if (name === project) { inProject = true; decision = "unspecified"; }
+      continue;
+    }
+    const parts = readKey(where);
+    blanks();
+    if (!parts || raw[at] !== "=" || rootKey(parts[0], where) === "projects") {
+      refuseAt(where, "noncanonical or ambiguous assignment (including dotted or inline projects)");
+    }
+    at += 1;
+    blanks();
+    skipValue(where);
+    if (inProject) {
+      const trust = raw.slice(from, at).trim().match(trustStatement);
+      if (trust) return trust[1];
+    }
+  }
 }
 
 function stage(file, bytes, mode) {
@@ -206,7 +284,6 @@ function attempt() {
     return true;
   }
   if (original) fs.accessSync(store, fs.constants.W_OK);
-  const previousBackup = read(backup); // Refuse a foreign file or symlink.
   const newline = before.includes(Buffer.from("\r\n")) ? "\r\n" : "\n";
   const separator = before.length === 0 ? "" : (before[before.length - 1] === 10 ? newline : newline + newline);
   const quoted = quotePath(project);
@@ -215,11 +292,7 @@ function attempt() {
   const mode = original ? original.info.mode & 0o777 : 0o600;
   fs.mkdirSync(path.dirname(store), { recursive: true, mode: 0o700 });
   let temp = stage(store, candidate, mode);
-  let backupTemp;
   try {
-    if (original) backupTemp = stage(backup, before, 0o600);
-    if (resolveStore() !== store || !same(read(store), original) || !same(read(backup), previousBackup)) return false;
-    if (backupTemp) { fs.renameSync(backupTemp, backup); backupTemp = null; }
     if (resolveStore() !== store || !same(read(store), original)) return false;
     fs.renameSync(temp, store);
     temp = null;
@@ -228,7 +301,6 @@ function attempt() {
     return true;
   } finally {
     if (temp) fs.unlinkSync(temp);
-    if (backupTemp) fs.unlinkSync(backupTemp);
   }
 }
 try {

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Behavior tests for Codex project intake, conservative syntax refusals,
-# exact config preservation, backups, and structural project-root validation.
+# Behavior tests for Codex project intake, conservative refusal of ambiguous
+# project entries, exact config preservation, and structural project-root
+# validation.
 # Uses only the existing Node dependency, including on stock macOS Python 3.9.
 set -eu
 
@@ -43,6 +44,19 @@ assert.ok(!text.includes(JSON.stringify(worktree)), 'must register the primary r
 NODE
 }
 
+assert_appended_to() {
+  node - "$1" "$CONFIG/config.toml" "$PROJ" "$2" <<'NODE'
+const fs = require('node:fs');
+const assert = require('node:assert/strict');
+const [beforePath, afterPath, project, newline] = process.argv.slice(2);
+const before = fs.readFileSync(beforePath);
+const after = fs.readFileSync(afterPath);
+const separator = before.length === 0 ? '' : (before[before.length - 1] === 10 ? newline : newline + newline);
+const suffix = Buffer.from(`${separator}[projects.${JSON.stringify(project)}]${newline}trust_level = "trusted"${newline}`);
+assert.deepEqual(after, Buffer.concat([before, suffix]), 'unrelated config bytes changed');
+NODE
+}
+
 assert_refused_unchanged() {
   local expected=$1 output
   shift
@@ -52,7 +66,6 @@ assert_refused_unchanged() {
   fi
   assert_contains "$output" "$expected" 'refusal explains the unsafe input'
   cmp -s "$CASE_DIR/before" "$CONFIG/config.toml" || fail 'refusal rewrote config.toml'
-  [ ! -e "$CONFIG/config.toml.bak" ] || fail 'refusal unexpectedly created a backup'
 }
 
 make_case absent
@@ -62,15 +75,24 @@ fi
 [ ! -e "$CONFIG/config.toml" ] || fail 'unauthorized call created config.toml'
 run_trust --project-add "$PROJ" >/dev/null
 assert_trusted
-[ ! -e "$CONFIG/config.toml.bak" ] || fail 'missing config generated a fake backup'
 pass 'only an explicitly authorized intake registers an absent project entry'
 
 make_case preserved
-node - "$CONFIG/config.toml" <<'NODE'
+node - "$CONFIG/config.toml" "$PROJ" <<'NODE'
 const fs = require('node:fs');
-fs.writeFileSync(process.argv[2], `# Keep ordering, comments, spacing, CRLF, and no final newline.
+const [store, project] = process.argv.slice(2);
+const key = JSON.stringify(project);
+fs.writeFileSync(store, `# Keep ordering, comments, spacing, CRLF, and no final newline.
 model = 'example-model' # keep this comment
 model_reasoning_effort="high"
+developer_instructions = """
+Leave this prose alone, including the entry it quotes:
+[projects.${key}]
+trust_level   =   "trusted"
+"""
+notice = '''
+A literal block holding an unbalanced ] and a # that opens no comment.
+'''
 [projects."/other/trusted"]
 trust_level = "trusted"
 custom_key = [ 1, 2 ]
@@ -78,29 +100,42 @@ custom_key = [ 1, 2 ]
 trust_level = "untrusted"
 [mcp_servers."example.server"]
 command = "local-server"
-args = ["--example", "projects.not_a_key", "# still string data"]
+args = [
+  "--example",
+  # a comment inside the array
+  "projects.not_a_key",
+  "# still string data",
+]
+[[shell_environment_policy.rules]]
+name = "example"
 [features]
 hooks = false`.replaceAll('\n', '\r\n'));
 NODE
 cp "$CONFIG/config.toml" "$CASE_DIR/before"
-printf 'old backup\n' > "$CONFIG/config.toml.bak"
 run_trust --project-add "$PROJ" >/dev/null
 assert_trusted
-cmp -s "$CASE_DIR/before" "$CONFIG/config.toml.bak" || fail 'backup is not the exact original config'
-node - "$CASE_DIR/before" "$CONFIG/config.toml" "$PROJ" <<'NODE'
-const fs = require('node:fs');
-const assert = require('node:assert/strict');
-const [beforePath, afterPath, project] = process.argv.slice(2);
-const before = fs.readFileSync(beforePath);
-const after = fs.readFileSync(afterPath);
-const suffix = Buffer.from(`\r\n\r\n[projects.${JSON.stringify(project)}]\r\ntrust_level = "trusted"\r\n`);
-assert.deepEqual(after, Buffer.concat([before, suffix]), 'unrelated config bytes changed');
-NODE
+assert_appended_to "$CASE_DIR/before" $'\r\n'
 cp "$CONFIG/config.toml" "$CASE_DIR/once"
 run_trust --project-add "$PROJ" >/dev/null
 cmp -s "$CASE_DIR/once" "$CONFIG/config.toml" || fail 'trusted project was rewritten'
-cmp -s "$CASE_DIR/before" "$CONFIG/config.toml.bak" || fail 'no-op replaced the backup'
-pass 'unrelated bytes and exact backup survive; repeated registration is a no-op'
+pass 'multiline and unrelated constructs are skipped intact; repeated registration is a no-op'
+
+make_case short_circuit
+node - "$CONFIG/config.toml" "$PROJ" <<'NODE'
+const fs = require('node:fs');
+const [store, project] = process.argv.slice(2);
+fs.writeFileSync(store, `[projects.${JSON.stringify(project)}]
+trust_level = "trusted"
+
+[projects.'/other/path']
+trust_level = "untrusted"
+`);
+NODE
+cp "$CONFIG/config.toml" "$CASE_DIR/before"
+output=$(run_trust --project-add "$PROJ")
+assert_contains "$output" 'existing trusted entry' 'settled decision is reported without reading further'
+cmp -s "$CASE_DIR/before" "$CONFIG/config.toml" || fail 'settled project was rewritten'
+pass 'an already trusted project no-ops without judging the rest of the file'
 
 make_case untrusted
 write_entry untrusted
@@ -108,7 +143,6 @@ cp "$CONFIG/config.toml" "$CASE_DIR/before"
 output=$(run_trust --project-add "$PROJ")
 assert_contains "$output" 'explicitly untrusted; decision preserved' 'untrusted decision is reported'
 cmp -s "$CASE_DIR/before" "$CONFIG/config.toml" || fail 'untrusted decision was changed'
-[ ! -e "$CONFIG/config.toml.bak" ] || fail 'untrusted no-op created a backup'
 pass 'canonical untrusted decision is a reported no-op'
 
 make_case unexpected
@@ -118,7 +152,7 @@ run_trust --project-add "$PROJ" >/dev/null
 cmp -s "$CASE_DIR/before" "$CONFIG/config.toml" || fail 'existing project entry was changed'
 pass 'any existing canonical project entry is left unchanged'
 
-for shape in quoted literal spaced dotted inline escaped array_table projects_parent multiline_string multiline_array; do
+for shape in quoted literal spaced dotted inline escaped array_table projects_parent subtable; do
   make_case "syntax-$shape"
   node - "$CONFIG/config.toml" "$PROJ" "$shape" <<'NODE'
 const fs = require('node:fs');
@@ -133,21 +167,24 @@ const cases = {
   escaped: `["\\u0070rojects".${key}]\ntrust_level = "untrusted"\n`,
   array_table: `[[projects.${key}]]\ntrust_level = "untrusted"\n`,
   projects_parent: `[projects]\n${key} = { trust_level = "untrusted" }\n`,
-  multiline_string: 'developer_instructions = """\nKeep this text unchanged.\n"""',
-  multiline_array: 'args = [\n"leave unchanged",\n]\n',
+  subtable: `[projects.${key}.nested]\nkey = "value"\n`,
 };
 fs.writeFileSync(store, cases[shape]);
 NODE
   assert_refused_unchanged 'refusing to register Codex trust' --project-add "$PROJ"
 done
-pass 'all evidence-file variants and ambiguous project or multiline constructs refuse before writing'
+pass 'every noncanonical construct that could name this project refuses before writing'
 
 make_case malformed
 printf '[projects\n' > "$CONFIG/config.toml"
 assert_refused_unchanged 'table header' --project-add "$PROJ"
 printf 'model = "unfinished\n' > "$CONFIG/config.toml"
 assert_refused_unchanged 'unterminated string' --project-add "$PROJ"
-pass 'incomplete tables and strings refuse without writes'
+printf 'args = [\n"unfinished",\n' > "$CONFIG/config.toml"
+assert_refused_unchanged 'unterminated value' --project-add "$PROJ"
+printf 'text = """\nunfinished\n' > "$CONFIG/config.toml"
+assert_refused_unchanged 'unterminated multiline string' --project-add "$PROJ"
+pass 'incomplete tables, strings, and values refuse without writes'
 
 make_case scope
 printf '# untouched\n' > "$CONFIG/config.toml"
@@ -168,21 +205,10 @@ ln -s "$CASE_DIR/actual.toml" "$CONFIG/config.toml"
 run_trust --project-add "$PROJ" >/dev/null
 [ -L "$CONFIG/config.toml" ] || fail 'config symlink was replaced'
 assert_trusted
-[ "$(cat "$CONFIG/config.toml.bak")" = '# symlink target' ] || fail 'config.toml.bak did not retain symlink target bytes'
 node - "$CASE_DIR/actual.toml" <<'NODE'
 require('node:assert/strict').equal(require('node:fs').statSync(process.argv[2]).mode & 0o777, 0o640);
 NODE
 pass 'owned config symlinks and existing permissions survive registration'
-
-make_case backup_symlink
-printf '# unchanged\n' > "$CONFIG/config.toml"
-printf 'unrelated backup target\n' > "$CASE_DIR/target"
-ln -s "$CASE_DIR/target" "$CONFIG/config.toml.bak"
-cp "$CONFIG/config.toml" "$CASE_DIR/before"
-if run_trust --project-add "$PROJ" >/dev/null; then fail 'backup symlink was accepted'; fi
-cmp -s "$CASE_DIR/before" "$CONFIG/config.toml" || fail 'backup refusal changed config'
-[ "$(cat "$CASE_DIR/target")" = 'unrelated backup target' ] || fail 'backup link target was changed'
-pass 'unsafe backup destination refuses without touching config or link target'
 
 make_case atomic_failure
 printf '# original\n' > "$CONFIG/config.toml"
@@ -200,9 +226,8 @@ if NODE_OPTIONS="--require=$CASE_DIR/rename-failure.cjs" run_trust --project-add
 fi
 assert_contains "$(cat "$CASE_DIR/output")" 'simulated publication failure' 'fault injection reached atomic publication'
 cmp -s "$CASE_DIR/before" "$CONFIG/config.toml" || fail 'publication failure truncated config'
-cmp -s "$CASE_DIR/before" "$CONFIG/config.toml.bak" || fail 'publication failure lost the backup'
 [ -z "$(find "$CONFIG" -name '.config.toml.fm-trust.*' -print)" ] || fail 'publication failure stranded staging files'
-pass 'failed atomic publication leaves the original config and a recoverable backup'
+pass 'failed atomic publication leaves the original config untouched'
 
 make_case quoted
 PROJ="$CASE_DIR/project with \"quotes\" and \\ café"
