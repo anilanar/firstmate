@@ -14,6 +14,10 @@
 # flag asserts that intake authorization; repository presence or a worker
 # launch is NOT consent. Never call from spawn, fleet sync, a discovered
 # clone, or registry recovery.
+# Intake is the hook because Codex records trust once, at the repository root,
+# and the clone step is the one moment a once-per-clone action belongs to.
+# fm-claude-trust.sh runs from code on every spawn instead because Claude's
+# trust is per worktree and genuinely does need re-establishing each time.
 # Codex persists trust at the primary repository root, covering its linked
 # worktrees; accepting its directory dialog is not session-scoped.
 #

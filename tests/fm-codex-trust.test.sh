@@ -269,10 +269,15 @@ for source_state in untrusted undecided absent; do
   seed_home "$SEEDED_HOME" nomistakes-n1 "$SOURCE_ROOT"
   if [ "$source_state" = absent ]; then
     printf '# no decision for the source checkout\n' > "$CONFIG/config.toml"
+    expected="source checkout $SOURCE_ROOT carries no Codex trusted entry"
+  elif [ "$source_state" = undecided ]; then
+    write_entry "$source_state" "$SOURCE_ROOT"
+    expected="source checkout $SOURCE_ROOT carries no Codex trusted entry"
   else
     write_entry "$source_state" "$SOURCE_ROOT"
+    expected="source checkout $SOURCE_ROOT is explicitly untrusted"
   fi
-  assert_refused_unchanged 'refusing to register Codex trust' --secondmate-home "$SEEDED_HOME" nomistakes-n1
+  assert_refused_unchanged "$expected" --secondmate-home "$SEEDED_HOME" nomistakes-n1
   node - "$CONFIG/config.toml" "$SEEDED_HOME" <<'NODE'
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -282,36 +287,70 @@ NODE
 done
 pass 'a home inherits trust only from a source checkout this config already trusts'
 
-for shape in no_marker wrong_id symlinked_marker no_agents no_bin escaping_dir leased plain_checkout no_origin; do
+# Each home below is otherwise registrable - a seeded clone whose source
+# checkout this config already trusts - so the single seeded defect is the only
+# thing left that can refuse it, and the expected reason names which guard saw
+# it. The two shapes with no source of their own are refused before the source
+# is ever consulted.
+for shape in no_marker wrong_id symlinked_marker no_agents no_bin escaping_dir leased no_origin; do
   make_case "home-$shape"
   printf '# untouched\n' > "$CONFIG/config.toml"
   SEEDED_HOME="$CASE_DIR/home"
-  if [ "$shape" = leased ]; then
-    fm_git_worktree "$CASE_DIR/home-src" "$SEEDED_HOME" "home-$shape"
-    mkdir -p "$SEEDED_HOME/bin" "$SEEDED_HOME/data" "$SEEDED_HOME/state" "$SEEDED_HOME/config" "$SEEDED_HOME/projects"
-    printf '# Firstmate\n' > "$SEEDED_HOME/AGENTS.md"
-    printf 'nomistakes-n1\n' > "$SEEDED_HOME/.fm-secondmate-home"
-  elif [ "$shape" = no_origin ]; then
-    seed_home "$SEEDED_HOME" nomistakes-n1
-  else
-    seed_home "$SEEDED_HOME" nomistakes-n1 "$(seed_firstmate_source "$CASE_DIR/firstmate")"
-  fi
   case "$shape" in
-    no_marker) rm "$SEEDED_HOME/.fm-secondmate-home" ;;
-    wrong_id) printf 'other-n1\n' > "$SEEDED_HOME/.fm-secondmate-home" ;;
+    leased)
+      fm_git_worktree "$CASE_DIR/home-src" "$SEEDED_HOME" "home-$shape"
+      mkdir -p "$SEEDED_HOME/bin" "$SEEDED_HOME/data" "$SEEDED_HOME/state" "$SEEDED_HOME/config" "$SEEDED_HOME/projects"
+      printf '# Firstmate\n' > "$SEEDED_HOME/AGENTS.md"
+      printf 'nomistakes-n1\n' > "$SEEDED_HOME/.fm-secondmate-home"
+      ;;
+    no_origin)
+      seed_home "$SEEDED_HOME" nomistakes-n1
+      ;;
+    *)
+      SOURCE_ROOT=$(seed_firstmate_source "$CASE_DIR/firstmate")
+      seed_home "$SEEDED_HOME" nomistakes-n1 "$SOURCE_ROOT"
+      write_entry trusted "$SOURCE_ROOT"
+      ;;
+  esac
+  HOME_REAL=$(cd -P -- "$SEEDED_HOME" && pwd -P)
+  case "$shape" in
+    no_marker)
+      rm "$SEEDED_HOME/.fm-secondmate-home"
+      expected="'$HOME_REAL' carries no .fm-secondmate-home marker"
+      ;;
+    wrong_id)
+      printf 'other-n1\n' > "$SEEDED_HOME/.fm-secondmate-home"
+      expected="'$HOME_REAL' is marked for secondmate 'other-n1', not 'nomistakes-n1'"
+      ;;
     symlinked_marker)
       rm "$SEEDED_HOME/.fm-secondmate-home"
       printf 'nomistakes-n1\n' > "$CASE_DIR/planted-marker"
       ln -s "$CASE_DIR/planted-marker" "$SEEDED_HOME/.fm-secondmate-home"
+      expected="'$HOME_REAL/.fm-secondmate-home' is a symlink"
       ;;
-    no_agents) rm "$SEEDED_HOME/AGENTS.md" ;;
-    no_bin) rmdir "$SEEDED_HOME/bin" ;;
-    escaping_dir) rmdir "$SEEDED_HOME/projects"; ln -s "$CASE_DIR" "$SEEDED_HOME/projects" ;;
-    plain_checkout) rm "$SEEDED_HOME/.fm-secondmate-home" "$SEEDED_HOME/AGENTS.md" ;;
+    no_agents)
+      rm "$SEEDED_HOME/AGENTS.md"
+      expected="'$HOME_REAL' has no AGENTS.md"
+      ;;
+    no_bin)
+      rmdir "$SEEDED_HOME/bin"
+      expected="'$HOME_REAL' has no bin/"
+      ;;
+    escaping_dir)
+      rmdir "$SEEDED_HOME/projects"
+      ln -s "$CASE_DIR" "$SEEDED_HOME/projects"
+      expected="'$HOME_REAL/projects' resolves to '$CASE_DIR', outside the home"
+      ;;
+    leased)
+      expected="'$HOME_REAL' is a linked worktree, not a primary checkout root"
+      ;;
+    no_origin)
+      expected="'$HOME_REAL' has no origin remote"
+      ;;
   esac
-  assert_refused_unchanged 'refusing to register Codex trust' --secondmate-home "$SEEDED_HOME" nomistakes-n1
+  assert_refused_unchanged "$expected" --secondmate-home "$SEEDED_HOME" nomistakes-n1
 done
-pass 'only a seeded home with a resolvable source qualifies, and never a leased worktree'
+pass 'each seed defect is the reason its home is refused, and a leased worktree never qualifies'
 
 make_case atomic_failure
 printf '# original\n' > "$CONFIG/config.toml"

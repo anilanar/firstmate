@@ -22,6 +22,8 @@ No worktree-path entry is expected, and the acceptance is not session-scoped.
 Verified on 2026-09-20 with codex-cli 0.155.1: an unregistered root showed the dialog, and a linked worktree of a root registered in that config reached its composer without one.
 That guard observes those two states and deliberately never drives the native acceptance.
 `../project-management/SKILL.md` owns consent for registering directory trust through `../../../bin/fm-codex-trust.sh`, during main-home project intake and, per `../secondmate-provisioning/SKILL.md`, for the project clones and the standalone home clone a local secondmate seed creates; a spawn, fleet sync, registry rebuild, or discovered clone never grants it.
+Registration is an intake step rather than a spawn step because Codex records trust once at the repository root, so the clone is the one moment a once-per-clone action belongs to.
+`../../../bin/fm-claude-trust.sh` runs from code on every spawn instead because Claude's trust is per worktree and has to be re-established each time.
 The directory dialog can be accepted with Enter when separately authorized; verify the instructions begin processing.
 
 ## Hook trust
