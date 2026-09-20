@@ -16,9 +16,11 @@ Verified on 2026-06-11 with codex-cli 0.139.0 unless a fact gives a newer versio
 | Model discovery | Open the current interactive session's `/model` picker. |
 | Marker | None; identity comes from ancestry, and `../../../bin/fm-harness.sh` is what keeps a retained foreign `CLAUDECODE` from renaming it. Verified on 2026-09-01 with codex-cli 0.152.0: the pane process is the `node` npm shim and the native `codex` binary runs as its foreground child, so a tool subprocess reaches the native name directly while the shim itself is identified from its script path. |
 
-A directory trust dialog appears on the first run for a repository root: "Do you trust the contents of this directory?"
-Accept it with Enter and verify the instructions begin processing.
-The decision persists for the repository, so later worktrees of the same project skip it.
+A directory trust dialog appears on the first run for an unregistered repository root: "Do you trust the contents of this directory?"
+Codex resolves a linked worktree to the primary repository root and persists the accepted decision under that root's path in its user config, so later worktrees of the same project skip it.
+No worktree-path entry is expected, and the acceptance is not session-scoped.
+`../project-management/SKILL.md` owns consent for registering directory trust during project intake, using `../../../bin/fm-codex-trust.sh`; a spawn never grants it.
+The directory dialog can be accepted with Enter when separately authorized; verify the instructions begin processing.
 
 ## Hook trust
 
