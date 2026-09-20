@@ -1,0 +1,114 @@
+<!doctype html><meta charset="utf-8"><title>Codex directory trust — live validation</title>
+<style>
+body { background:#0a0b0e; color:#d8d8d8; font:15px/1.55 -apple-system,Segoe UI,sans-serif; padding:26px; max-width:1520px; margin:auto; }
+h1 { font-size:22px; margin:0 0 6px; } h2 { font-size:17px; margin:26px 0 10px; border-bottom:1px solid #262a33; padding-bottom:6px; }
+h3 { font-size:14.5px; margin:18px 0 5px; color:#c9d1e0; }
+p.lede { color:#9aa0ad; max-width:100ch; margin:0 0 4px; }
+.pair { display:flex; gap:16px; flex-wrap:wrap; align-items:flex-start; } .pair figure { flex:1 1 660px; }
+figure { margin:0 0 10px; } figcaption { color:#9aa0ad; font-size:13px; margin-bottom:6px; max-width:100ch; }
+pre { background:#12141a; padding:11px 13px; border-radius:8px; font:12.5px/1.32 "SF Mono",Menlo,monospace;
+      overflow-x:auto; border:1px solid #262a33; }
+table { border-collapse:collapse; width:100%; font-size:12.5px; margin-top:8px; }
+td, th { border-bottom:1px solid #262a33; padding:6px 9px; vertical-align:top; text-align:left; }
+code { color:#8fd6b4; } td:first-child { width:26px; } ul { font-size:12.5px; color:#b9c0cc; }
+</style>
+<h1>Codex directory trust — live validation</h1>
+<p class="lede">Real <code>codex-cli 0.155.1</code> driven in a sized private PTY with throwaway <code>HOME</code>/<code>CODEX_HOME</code>
+and synthetic credentials; no prompt sent and no model tokens spent. Every screen below is the actual terminal grid Codex painted.
+The operator's real <code>~/.codex/config.toml</code> was checksum-verified unchanged across all runs.</p>
+<h2>Fresh project clone — worker launched into a linked worktree</h2><div class="pair">
+<figure><figcaption>Before intake registration: Codex blocks on the directory-trust dialog and waits for a human. It states the decision applies to the repository root, not the worktree.</figcaption><pre>&gt; <span style="font-weight:700">You are in </span>/private/tmp/fm-codex-trust-validate/lab/project-intake/worktree
+ 
+  <span style="color:#c8a52b">Note: You’re in a subdirectory of a Git project. Trusting will apply to the repository root:</span>
+  <span style="color:#c8a52b">/private/tmp/fm-codex-trust-validate/lab/project-intake/project</span>
+ 
+  Do you trust the contents of this directory? Working with untrusted contents comes with higher risk of prompt
+  injection. Trusting the directory allows project-local config, hooks, and exec policies to load.
+ 
+<span style="color:#33aaaa">› 1. Yes, continue</span>
+  2. No, quit
+ 
+  <span style="opacity:.65">Press enter to continue</span></pre></figure>
+<figure><figcaption>After <code>fm-codex-trust.sh --project-add &lt;primary root&gt;</code>: the same worktree reaches the composer with no dialog.</figcaption><pre><span style="opacity:.65">╭─────────────────────────────────────────────────────────╮</span>
+<span style="opacity:.65">│ &gt;_ </span><span style="font-weight:700">OpenAI Codex</span><span style="opacity:.65"> (v0.155.1)                              │</span>
+<span style="opacity:.65">│                                                         │</span>
+<span style="opacity:.65">│ model:       </span>gpt-6-astra<span style="opacity:.65">   </span><span style="color:#33aaaa">/model</span><span style="opacity:.65"> to change             │</span>
+<span style="opacity:.65">│ directory:   </span>/private/tmp/…/lab/project-intake/worktree<span style="opacity:.65"> │</span>
+<span style="opacity:.65">│ permissions: </span><span style="color:#aa55cc;font-weight:700">YOLO mode</span><span style="opacity:.65">                                  │</span>
+<span style="opacity:.65">╰─────────────────────────────────────────────────────────╯</span>
+ 
+ 
+ 
+<span style="font-weight:700">›</span> <span style="opacity:.65">Ask Codex to do anything</span>
+ 
+  <span style="color:#f6e2b7">gpt-6-astra default</span><span style="opacity:.65"> · </span><span style="color:#abdfa7">/private/tmp/fm-codex-trust-validate/lab/project-intake/worktree</span></pre></figure></div><h2>Standalone secondmate home — the directory a secondmate pane starts in</h2><div class="pair">
+<figure><figcaption>Before registration: the seeded standalone home clone blocks the worker on the same dialog.</figcaption><pre>&gt; <span style="font-weight:700">You are in </span>/private/tmp/fm-codex-trust-validate/lab/secondmate-home/fm-homes/nomistakes-n1
+ 
+  Do you trust the contents of this directory? Working with untrusted contents comes with higher risk of prompt
+  injection. Trusting the directory allows project-local config, hooks, and exec policies to load.
+ 
+<span style="color:#33aaaa">› 1. Yes, continue</span>
+  2. No, quit
+ 
+  <span style="opacity:.65">Press enter to continue</span></pre></figure>
+<figure><figcaption>After <code>fm-codex-trust.sh --secondmate-home &lt;home&gt; &lt;id&gt;</code> inherited trust from the firstmate checkout: composer, no dialog.</figcaption><pre><span style="opacity:.65">╭────────────────────────────────────────────────────╮</span>
+<span style="opacity:.65">│ &gt;_ </span><span style="font-weight:700">OpenAI Codex</span><span style="opacity:.65"> (v0.155.1)                         │</span>
+<span style="opacity:.65">│                                                    │</span>
+<span style="opacity:.65">│ model:       </span>gpt-6-astra<span style="opacity:.65">   </span><span style="color:#33aaaa">/model</span><span style="opacity:.65"> to change        │</span>
+<span style="opacity:.65">│ directory:   </span>/private/tmp/…/fm-homes/nomistakes-n1<span style="opacity:.65"> │</span>
+<span style="opacity:.65">│ permissions: </span><span style="color:#aa55cc;font-weight:700">YOLO mode</span><span style="opacity:.65">                             │</span>
+<span style="opacity:.65">╰────────────────────────────────────────────────────╯</span>
+ 
+ 
+ 
+<span style="font-weight:700">›</span> <span style="opacity:.65">Ask Codex to do anything</span>
+ 
+  <span style="color:#f6e2b7">gpt-6-astra default</span><span style="opacity:.65"> · </span><span style="color:#abdfa7">/private/tmp/fm-codex-trust-validate/lab/secondmate-home/fm-homes/nomistakes-n1</span></pre></figure></div><h2>Guards driven against real Codex</h2><h3>Operator answered “no” earlier</h3><figure><figcaption>Intake reports <code>explicitly untrusted; decision preserved</code>, leaves config.toml byte-identical, and the recorded decision is still <code>untrusted</code> — Codex loads that untouched config.</figcaption><pre><span style="opacity:.65">╭────────────────────────────────────────────────────────╮</span>
+<span style="opacity:.65">│ &gt;_ </span><span style="font-weight:700">OpenAI Codex</span><span style="opacity:.65"> (v0.155.1)                             │</span>
+<span style="opacity:.65">│                                                        │</span>
+<span style="opacity:.65">│ model:       </span>gpt-6-astra<span style="opacity:.65">   </span><span style="color:#33aaaa">/model</span><span style="opacity:.65"> to change            │</span>
+<span style="opacity:.65">│ directory:   </span>/private/tmp/…/untrusted-decision/project<span style="opacity:.65"> │</span>
+<span style="opacity:.65">│ permissions: </span><span style="color:#aa55cc;font-weight:700">YOLO mode</span><span style="opacity:.65">                                 │</span>
+<span style="opacity:.65">╰────────────────────────────────────────────────────────╯</span>
+ 
+ 
+ 
+<span style="font-weight:700">›</span> <span style="opacity:.65">Ask Codex to do anything</span>
+ 
+  <span style="color:#f6e2b7">gpt-6-astra default</span><span style="opacity:.65"> · </span><span style="color:#abdfa7">/private/tmp/fm-codex-trust-validate/lab/untrusted-decision/project</span></pre></figure><h3>Decision spelled in a form the helper cannot compare</h3><figure><figcaption>A literal-quoted <code>[projects.'…']</code> untrusted entry: the helper refuses rather than appending a second table for the same path. One table remains and Codex still loads the file.</figcaption><pre><span style="opacity:.65">╭────────────────────────────────────────────────────────╮</span>
+<span style="opacity:.65">│ &gt;_ </span><span style="font-weight:700">OpenAI Codex</span><span style="opacity:.65"> (v0.155.1)                             │</span>
+<span style="opacity:.65">│                                                        │</span>
+<span style="opacity:.65">│ model:       </span>gpt-6-astra<span style="opacity:.65">   </span><span style="color:#33aaaa">/model</span><span style="opacity:.65"> to change            │</span>
+<span style="opacity:.65">│ directory:   </span>/private/…/noncanonical-untrusted/project<span style="opacity:.65"> │</span>
+<span style="opacity:.65">│ permissions: </span><span style="color:#aa55cc;font-weight:700">YOLO mode</span><span style="opacity:.65">                                 │</span>
+<span style="opacity:.65">╰────────────────────────────────────────────────────────╯</span>
+ 
+ 
+ 
+<span style="font-weight:700">›</span> <span style="opacity:.65">Ask Codex to do anything</span>
+ 
+  <span style="color:#f6e2b7">gpt-6-astra default</span><span style="opacity:.65"> · </span><span style="color:#abdfa7">/private/tmp/fm-codex-trust-validate/lab/noncanonical-untrusted/project</span></pre></figure><h3>Home cloned from a checkout nobody trusts</h3><figure><figcaption>Provisioning cannot make a home the first trusted copy of an untrusted firstmate checkout: it refuses, and the home keeps its dialog.</figcaption><pre>&gt; <span style="font-weight:700">You are in </span>/private/tmp/fm-codex-trust-validate/lab/home-untrusted-source/fm-homes/nomistakes-n2
+ 
+  Do you trust the contents of this directory? Working with untrusted contents comes with higher risk of prompt
+  injection. Trusting the directory allows project-local config, hooks, and exec policies to load.
+ 
+<span style="color:#33aaaa">› 1. Yes, continue</span>
+  2. No, quit
+ 
+  <span style="opacity:.65">Press enter to continue</span></pre></figure><h3>Config an append landed in</h3><figure><figcaption>Appended into a config with comments, multiline prose, other tables and no trailing newline: real Codex loads it, the pre-existing entry survives, and the dialog is gone.</figcaption><pre><span style="opacity:.65">╭──────────────────────────────────────────────────────╮</span>
+<span style="opacity:.65">│ &gt;_ </span><span style="font-weight:700">OpenAI Codex</span><span style="opacity:.65"> (v0.155.1)                           │</span>
+<span style="opacity:.65">│                                                      │</span>
+<span style="opacity:.65">│ model:       </span>gpt-6-astra high<span style="opacity:.65">   </span><span style="color:#33aaaa">/model</span><span style="opacity:.65"> to change     │</span>
+<span style="opacity:.65">│ directory:   </span>/private/tmp/…/lab/messy-config/project<span style="opacity:.65"> │</span>
+<span style="opacity:.65">│ permissions: </span><span style="color:#aa55cc;font-weight:700">YOLO mode</span><span style="opacity:.65">                               │</span>
+<span style="opacity:.65">╰──────────────────────────────────────────────────────╯</span>
+ 
+  <span style="font-weight:700">Tip:</span> <span style="font-style:italic">New</span> Build faster with the <span style="font-weight:700">Desktop app</span>. Run &#x27;codex app&#x27; or visit https://chatgpt.com/codex?app-landing-page=true
+ 
+ 
+ 
+<span style="font-weight:700">›</span> <span style="opacity:.65">Ask Codex to do anything</span>
+ 
+  <span style="color:#f6e2b7">gpt-6-astra high</span><span style="opacity:.65"> · </span><span style="color:#abdfa7">/private/tmp/fm-codex-trust-validate/lab/messy-config/project</span></pre></figure>
+<h2>Refusals the helper emitted (all before any write, config byte-identical)</h2><ul><li><code>exit=1  error: refusing to register Codex trust: '/private/tmp/fm-codex-trust-validate/lab/worktree-arg/worktree' is a linked worktree, not a primary checkout root</code></li><li><code>PASS linked-worktree-argument-is-refused-without-writing: exit=1; "error: refusing to register Codex trust: '/private/tmp/fm-codex-trust-validate/lab/worktree-arg/worktree' is a linked worktree, not a primary checkout root"; config byte-identical=True</code></li><li><code>exit=1  error: refusing to register Codex trust: line 4: noncanonical or ambiguous table header</code></li><li><code>PASS noncanonical-decision-is-refused-not-duplicated: exit=1; 'error: refusing to register Codex trust: line 4: noncanonical or ambiguous table header'; config byte-identical=True; projects tables for this path=1; codex=composer</code></li><li><code>exit=1  error: refusing to register Codex trust: source checkout /private/tmp/fm-codex-trust-validate/lab/home-untrusted-source/firstmate is explicitly untrusted, so this home inherits no trust</code></li><li><code>PASS home-never-becomes-the-first-trusted-copy-of-an-untrusted-source: exit=1; 'error: refusing to register Codex trust: source checkout /private/tmp/fm-codex-trust-validate/lab/home-untrusted-source/firstmate is explicitly untrusted, so this home inherits no trust'; config byte-identical=True; codex=dialog</code></li><li><code>exit=1  error: refusing to register Codex trust: '/private/tmp/fm-codex-trust-validate/lab/home-wrong-id/fm-homes/nomistakes-n3' is marked for secondmate 'someone-else-n1', not 'nomistakes-n3'</code></li><li><code>PASS home-marked-for-another-secondmate-is-refused: exit=1; "error: refusing to register Codex trust: '/private/tmp/fm-codex-trust-validate/lab/home-wrong-id/fm-homes/nomistakes-n3' is marked for secondmate 'someone-else-n1', not 'nomistakes-n3'"</code></li><li><code>"detail": "exit=1; \"error: refusing to register Codex trust: '/private/tmp/fm-codex-trust-validate/lab/worktree-arg/worktree' is a linked worktree, not a primary checkout root\"; config byte-identical=True"</code></li><li><code>"detail": "exit=1; 'error: refusing to register Codex trust: line 4: noncanonical or ambiguous table header'; config byte-identical=True; projects tables for this path=1; codex=composer"</code></li><li><code>"detail": "exit=1; 'error: refusing to register Codex trust: source checkout /private/tmp/fm-codex-trust-validate/lab/home-untrusted-source/firstmate is explicitly untrusted, so this home inherits no trust'; config byte-identical=True; codex=dialog"</code></li><li><code>"detail": "exit=1; \"error: refusing to register Codex trust: '/private/tmp/fm-codex-trust-validate/lab/home-wrong-id/fm-homes/nomistakes-n3' is marked for secondmate 'someone-else-n1', not 'nomistakes-n3'\""</code></li></ul>
+<h2>Assertions</h2><table><tr><th></th><th>scenario</th><th>observed</th></tr><tr><td>✅</td><td><code>project-intake-stops-the-trust-dialog</code></td><td>unregistered=dialog; helper='trusted: /private/tmp/fm-codex-trust-validate/lab/project-intake/project'; registered=composer</td></tr><tr><td>✅</td><td><code>trust-is-recorded-at-the-primary-root-not-the-worktree</code></td><td>config keys the primary checkout only; worktree path absent</td></tr><tr><td>✅</td><td><code>secondmate-home-registration-stops-its-dialog</code></td><td>unregistered=dialog; helper='trusted: /private/tmp/fm-codex-trust-validate/lab/secondmate-home/fm-homes/nomistakes-n1'; registered=composer</td></tr><tr><td>✅</td><td><code>explicit-untrusted-decision-is-never-flipped-to-trusted</code></td><td>helper='unchanged: /private/tmp/fm-codex-trust-validate/lab/untrusted-decision/project (explicitly untrusted; decision preserved)'; config byte-identical=True; recorded decision(s)=['untrusted']; codex=composer</td></tr><tr><td>✅</td><td><code>linked-worktree-argument-is-refused-without-writing</code></td><td>exit=1; "error: refusing to register Codex trust: '/private/tmp/fm-codex-trust-validate/lab/worktree-arg/worktree' is a linked worktree, not a primary checkout root"; config byte-identical=True</td></tr><tr><td>✅</td><td><code>noncanonical-decision-is-refused-not-duplicated</code></td><td>exit=1; 'error: refusing to register Codex trust: line 4: noncanonical or ambiguous table header'; config byte-identical=True; projects tables for this path=1; codex=composer</td></tr><tr><td>✅</td><td><code>home-never-becomes-the-first-trusted-copy-of-an-untrusted-source</code></td><td>exit=1; 'error: refusing to register Codex trust: source checkout /private/tmp/fm-codex-trust-validate/lab/home-untrusted-source/firstmate is explicitly untrusted, so this home inherits no trust'; config byte-identical=True; codex=dialog</td></tr><tr><td>✅</td><td><code>home-marked-for-another-secondmate-is-refused</code></td><td>exit=1; "error: refusing to register Codex trust: '/private/tmp/fm-codex-trust-validate/lab/home-wrong-id/fm-homes/nomistakes-n3' is marked for secondmate 'someone-else-n1', not 'nomistakes-n3'"</td></tr><tr><td>✅</td><td><code>messy-existing-config-stays-loadable-after-registration</code></td><td>helper='trusted: /private/tmp/fm-codex-trust-validate/lab/messy-config/project'; prior bytes untouched=True; new decision=['trusted']; pre-existing entry=['trusted']; codex=composer</td></tr></table>

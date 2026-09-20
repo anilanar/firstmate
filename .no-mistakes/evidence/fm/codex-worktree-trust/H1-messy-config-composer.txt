@@ -1,0 +1,16 @@
+
+╭──────────────────────────────────────────────────────╮
+│ >_ OpenAI Codex (v0.155.1)                           │
+│                                                      │
+│ model:       gpt-6-astra high   /model to change     │
+│ directory:   /private/tmp/…/lab/messy-config/project │
+│ permissions: YOLO mode                               │
+╰──────────────────────────────────────────────────────╯
+
+  Tip: New Build faster with the Desktop app. Run 'codex app' or visit https://chatgpt.com/codex?app-landing-page=true
+
+
+
+› Ask Codex to do anything
+
+  gpt-6-astra high · /private/tmp/fm-codex-trust-validate/lab/messy-config/project

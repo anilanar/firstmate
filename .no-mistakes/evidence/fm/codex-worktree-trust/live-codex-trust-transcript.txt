@@ -1,0 +1,50 @@
+codex under test: codex-cli 0.155.1
+
+[A] fresh-clone project intake
+  launch[A1-before-dialog] cwd=/private/tmp/fm-codex-trust-validate/lab/project-intake/worktree -> dialog
+  $ fm-codex-trust.sh --project-add /private/tmp/fm-codex-trust-validate/lab/project-intake/project
+    exit=0  trusted: /private/tmp/fm-codex-trust-validate/lab/project-intake/project
+  launch[A2-after-composer] cwd=/private/tmp/fm-codex-trust-validate/lab/project-intake/worktree -> composer
+PASS project-intake-stops-the-trust-dialog: unregistered=dialog; helper='trusted: /private/tmp/fm-codex-trust-validate/lab/project-intake/project'; registered=composer
+PASS trust-is-recorded-at-the-primary-root-not-the-worktree: config keys the primary checkout only; worktree path absent
+
+[B] standalone secondmate home
+  launch[B1-home-before-dialog] cwd=/private/tmp/fm-codex-trust-validate/lab/secondmate-home/fm-homes/nomistakes-n1 -> dialog
+  $ fm-codex-trust.sh --secondmate-home /private/tmp/fm-codex-trust-validate/lab/secondmate-home/fm-homes/nomistakes-n1 nomistakes-n1
+    exit=0  trusted: /private/tmp/fm-codex-trust-validate/lab/secondmate-home/fm-homes/nomistakes-n1
+  launch[B2-home-after-composer] cwd=/private/tmp/fm-codex-trust-validate/lab/secondmate-home/fm-homes/nomistakes-n1 -> composer
+PASS secondmate-home-registration-stops-its-dialog: unregistered=dialog; helper='trusted: /private/tmp/fm-codex-trust-validate/lab/secondmate-home/fm-homes/nomistakes-n1'; registered=composer
+
+[C] adversarial: explicit untrusted decision
+  $ fm-codex-trust.sh --project-add /private/tmp/fm-codex-trust-validate/lab/untrusted-decision/project
+    exit=0  unchanged: /private/tmp/fm-codex-trust-validate/lab/untrusted-decision/project (explicitly untrusted; decision preserved)
+  launch[C1-untrusted-decision-preserved] cwd=/private/tmp/fm-codex-trust-validate/lab/untrusted-decision/project -> composer
+PASS explicit-untrusted-decision-is-never-flipped-to-trusted: helper='unchanged: /private/tmp/fm-codex-trust-validate/lab/untrusted-decision/project (explicitly untrusted; decision preserved)'; config byte-identical=True; recorded decision(s)=['untrusted']; codex=composer
+
+[D] adversarial: linked worktree argument
+  $ fm-codex-trust.sh --project-add /private/tmp/fm-codex-trust-validate/lab/worktree-arg/worktree
+    exit=1  error: refusing to register Codex trust: '/private/tmp/fm-codex-trust-validate/lab/worktree-arg/worktree' is a linked worktree, not a primary checkout root
+PASS linked-worktree-argument-is-refused-without-writing: exit=1; "error: refusing to register Codex trust: '/private/tmp/fm-codex-trust-validate/lab/worktree-arg/worktree' is a linked worktree, not a primary checkout root"; config byte-identical=True
+
+[E] adversarial: noncanonical untrusted entry the helper cannot compare
+  $ fm-codex-trust.sh --project-add /private/tmp/fm-codex-trust-validate/lab/noncanonical-untrusted/project
+    exit=1  error: refusing to register Codex trust: line 4: noncanonical or ambiguous table header
+  launch[E1-noncanonical-untrusted-not-duplicated] cwd=/private/tmp/fm-codex-trust-validate/lab/noncanonical-untrusted/project -> composer
+PASS noncanonical-decision-is-refused-not-duplicated: exit=1; 'error: refusing to register Codex trust: line 4: noncanonical or ambiguous table header'; config byte-identical=True; projects tables for this path=1; codex=composer
+
+[F] adversarial: secondmate home with an untrusted source checkout
+  $ fm-codex-trust.sh --secondmate-home /private/tmp/fm-codex-trust-validate/lab/home-untrusted-source/fm-homes/nomistakes-n2 nomistakes-n2
+    exit=1  error: refusing to register Codex trust: source checkout /private/tmp/fm-codex-trust-validate/lab/home-untrusted-source/firstmate is explicitly untrusted, so this home inherits no trust
+  launch[F1-untrusted-source-home-still-asks] cwd=/private/tmp/fm-codex-trust-validate/lab/home-untrusted-source/fm-homes/nomistakes-n2 -> dialog
+PASS home-never-becomes-the-first-trusted-copy-of-an-untrusted-source: exit=1; 'error: refusing to register Codex trust: source checkout /private/tmp/fm-codex-trust-validate/lab/home-untrusted-source/firstmate is explicitly untrusted, so this home inherits no trust'; config byte-identical=True; codex=dialog
+
+[G] adversarial: home marked for a different secondmate id
+  $ fm-codex-trust.sh --secondmate-home /private/tmp/fm-codex-trust-validate/lab/home-wrong-id/fm-homes/nomistakes-n3 nomistakes-n3
+    exit=1  error: refusing to register Codex trust: '/private/tmp/fm-codex-trust-validate/lab/home-wrong-id/fm-homes/nomistakes-n3' is marked for secondmate 'someone-else-n1', not 'nomistakes-n3'
+PASS home-marked-for-another-secondmate-is-refused: exit=1; "error: refusing to register Codex trust: '/private/tmp/fm-codex-trust-validate/lab/home-wrong-id/fm-homes/nomistakes-n3' is marked for secondmate 'someone-else-n1', not 'nomistakes-n3'"
+
+[H] real codex parses a config this helper appended to
+  $ fm-codex-trust.sh --project-add /private/tmp/fm-codex-trust-validate/lab/messy-config/project
+    exit=0  trusted: /private/tmp/fm-codex-trust-validate/lab/messy-config/project
+  launch[H1-messy-config-composer] cwd=/private/tmp/fm-codex-trust-validate/lab/messy-config/project -> composer
+PASS messy-existing-config-stays-loadable-after-registration: helper='trusted: /private/tmp/fm-codex-trust-validate/lab/messy-config/project'; prior bytes untouched=True; new decision=['trusted']; pre-existing entry=['trusted']; codex=composer

@@ -1,0 +1,20 @@
+check_for_update_on_startup = false
+cli_auth_credentials_store = "file"
+# operator comment kept verbatim
+model_reasoning_effort = "high"
+notes = """
+A multiline block mentioning [projects."/decoy/path"] that is only prose.
+"""
+[projects."/other/project"]
+trust_level = "trusted"
+[mcp_servers."example"]
+command = "local-server"
+args = [
+  "--example",
+  "# not a comment",
+]
+[features]
+hooks = false
+
+[projects."/private/tmp/fm-codex-trust-validate/lab/messy-config/project"]
+trust_level = "trusted"

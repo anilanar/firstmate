@@ -1,0 +1,5 @@
+check_for_update_on_startup = false
+cli_auth_credentials_store = "file"
+
+[projects."/private/tmp/fm-codex-trust-validate/lab/project-intake/project"]
+trust_level = "trusted"

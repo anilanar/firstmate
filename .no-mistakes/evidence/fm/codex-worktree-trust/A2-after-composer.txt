@@ -1,0 +1,14 @@
+
+╭─────────────────────────────────────────────────────────╮
+│ >_ OpenAI Codex (v0.155.1)                              │
+│                                                         │
+│ model:       gpt-6-astra   /model to change             │
+│ directory:   /private/tmp/…/lab/project-intake/worktree │
+│ permissions: YOLO mode                                  │
+╰─────────────────────────────────────────────────────────╯
+
+
+
+› Ask Codex to do anything
+
+  gpt-6-astra default · /private/tmp/fm-codex-trust-validate/lab/project-intake/worktree
