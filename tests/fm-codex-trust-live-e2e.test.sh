@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # Token-free installed-Codex guard for project-root directory trust. Uses a
 # private PTY, throwaway HOME/CODEX_HOME, fake API credentials, and no prompt.
-# Proves an unregistered linked worktree shows the directory dialog and the
-# intake helper removes that dialog. Native dialog acceptance belongs to Codex;
-# this guard sends no input except terminal capability-query responses.
+# Proves an unregistered linked worktree shows the directory dialog and that a
+# registration this run performed removes it. Native dialog acceptance belongs
+# to Codex; this guard sends no input except terminal capability-query
+# responses.
 # No fleet endpoint, real config, credentials, or hook trust store is touched.
 set -eu
 # shellcheck source=tests/lib.sh
@@ -90,7 +91,13 @@ def launch(expect_dialog):
 try:
     launch(True)
     print('ok - codex ' + version + ': an unregistered project root shows the directory dialog')
-    subprocess.run([helper, '--project-add', str(project)], env=env, check=True, stdout=subprocess.DEVNULL)
+    report = subprocess.run(
+        [helper, '--project-add', str(project)], env=env, check=True,
+        stdout=subprocess.PIPE, text=True,
+    ).stdout.strip()
+    expected = 'trusted: ' + str(project.resolve())
+    if report != expected:
+        raise AssertionError('helper reported ' + repr(report) + ', not ' + repr(expected))
     launch(False)
     print('ok - codex ' + version + ': intake registration reaches the composer without a directory dialog')
 except (AssertionError, OSError, subprocess.SubprocessError) as error:
